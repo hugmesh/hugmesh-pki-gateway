@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: snapdragon-id-gateway
+
+  r2dbc:
+    # Default URL targets the replica's published host port (15433) for IDE dev.
+    # Inside docker-compose, SPRING_R2DBC_URL overrides to pg-replica:5432.
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:15433/gateway}
+    username: ${SPRING_R2DBC_USERNAME:gateway_reader}
+    password: ${SPRING_R2DBC_PASSWORD:changeme}
+    pool:
+      initial-size: 2
+      max-size: 10
+
+  # No spring.security.oauth2.client.* properties here. The
+  # ReactiveClientRegistrationRepository is provided by OAuth2ClientConfig
+  # via profile-gated @Bean methods. One of the following profiles MUST be
+  # active, otherwise Spring Security's oauth2Login() has no registrations:
+  #   - `local`   → in-process mock registration, no external OIDC server
+  #   - `casdoor` → fetches OIDC discovery from ${CASDOOR_ISSUER_URI}
+  # Tests activate `local`; docker-compose activates `casdoor`.
+
+  cloud:
+    gateway:
+      # All routes come from DbRouteDefinitionLocator (Postgres). No static routes.
+      default-filters: []
+
+gateway:
+  routes:
+    refresh-interval: ${GATEWAY_ROUTES_REFRESH_INTERVAL:30s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,refresh
+  endpoint:
+    gateway:
+      access: read_only
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    systems.snapdragon.gateway: DEBUG
