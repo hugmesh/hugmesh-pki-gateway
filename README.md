@@ -137,6 +137,8 @@ See `.env.example` for the full list. Summary:
 | `CASDOOR_CLIENT_ID` | gateway container | Casdoor application client id |
 | `CASDOOR_CLIENT_SECRET` | gateway container | Casdoor application client secret |
 | `GATEWAY_ROUTES_REFRESH_INTERVAL` | gateway container | How often the scheduled publisher fires `RefreshRoutesEvent` (default `30s`) |
+| `GATEWAY_BIND_HOST` | docker-compose | Host interface the gateway's `8080` port binds to. Default `127.0.0.1` (loopback only). Set to `0.0.0.0` to expose externally. |
+| `CASDOOR_BIND_HOST` | docker-compose | Same as above for Casdoor's `8000`. Default `127.0.0.1`. Casdoor ships with a default admin login — do not expose without changing that password. |
 
 ## Actuator endpoints
 

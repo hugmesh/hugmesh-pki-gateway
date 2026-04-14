@@ -72,17 +72,36 @@ with "permission denied on /var/run/docker.sock".
 
 ## Environment
 
-- **WSL2 on Ubuntu.** Docker Engine is installed natively (see
-  `scripts/install-docker.sh`). Port bindings on `0.0.0.0` are effectively
-  host-local because WSL2 doesn't forward them beyond the Windows host
-  without explicit firewall/portproxy rules.
+- **DigitalOcean Droplet running Ubuntu 24.04.** This matters: port
+  bindings on `0.0.0.0` ARE reachable from the public internet (the
+  Droplet's public IP is on `eth0`), subject only to whatever DO cloud
+  firewall and host-level `ufw`/`iptables` rules happen to be in effect.
+  There is **no WSL2-style isolation**. Treat any service you start here
+  as potentially world-reachable until you've confirmed otherwise.
+- **The Droplet already runs something on 80/443.** Don't assume those
+  ports are free. Use the high ports in docker-compose (see below).
+- **Docker Engine is installed natively** (see `scripts/install-docker.sh`).
+  The current shell's group membership may not include `docker` — wrap
+  docker/compose commands in `sg docker -c "..."` so the shell picks up
+  the group.
 - **No sudo from the Bash tool.** The harness blocks sudo. If a task
-  genuinely needs it (package installs, system service control), hand the
-  user the exact commands to run instead of attempting them.
+  genuinely needs it (package installs, system service control, querying
+  `ufw`/`iptables` filter rules), hand the user the exact commands to
+  run instead of attempting them.
 - **Port 5432 may be taken on the host** by a system Postgres. The compose
   file publishes the primary at `127.0.0.1:15432` and the replica at
   `127.0.0.1:15433` to avoid conflicts. Don't change these back to 5432
   without checking the host first.
+- **Dev-facing service ports bind to `127.0.0.1` by default**, not
+  `0.0.0.0`, specifically because this is a publicly-reachable Droplet
+  and we do not want random scanners hitting Casdoor's default
+  `built-in/admin` / `123` login during a verification run. The gateway
+  and Casdoor bindings are env-var switchable:
+  `GATEWAY_BIND_HOST` and `CASDOOR_BIND_HOST` in `.env` (default
+  `127.0.0.1`). Set either to `0.0.0.0` to expose on all interfaces.
+  Pg nodes are hard-coded loopback — there's no use case for external
+  access to them. If you need remote access from a workstation, prefer
+  `ssh -L 8080:127.0.0.1:8080 droplet` over flipping the bind host.
 
 ## Known gotchas (with workarounds already in place)
 
