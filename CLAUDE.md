@@ -73,11 +73,16 @@ with "permission denied on /var/run/docker.sock".
 ## Environment
 
 - **DigitalOcean Droplet running Ubuntu 24.04.** This matters: port
-  bindings on `0.0.0.0` ARE reachable from the public internet (the
-  Droplet's public IP is on `eth0`), subject only to whatever DO cloud
-  firewall and host-level `ufw`/`iptables` rules happen to be in effect.
-  There is **no WSL2-style isolation**. Treat any service you start here
-  as potentially world-reachable until you've confirmed otherwise.
+  bindings on `0.0.0.0` ARE reachable from the public internet in
+  principle (the Droplet's public IP is on `eth0`), subject to the host
+  firewall. There is **no WSL2-style isolation**.
+- **`ufw` is active on this host with a restrictive default**. As of
+  writing it allows only `47829/tcp`, `80/tcp`, and `443/tcp` inbound —
+  everything else is dropped. That's load-bearing for why binding random
+  high ports to `0.0.0.0` hasn't led to exposure incidents so far. Do
+  NOT assume this is permanent; check `sudo ufw status` before relying
+  on it, and prefer loopback binding in compose regardless (defense in
+  depth).
 - **The Droplet already runs something on 80/443.** Don't assume those
   ports are free. Use the high ports in docker-compose (see below).
 - **Docker Engine is installed natively** (see `scripts/install-docker.sh`).

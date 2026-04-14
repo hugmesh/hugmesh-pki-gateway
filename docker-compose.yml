@@ -95,6 +95,27 @@ services:
       retries: 30
       start_period: 30s
 
+  casdoor-bootstrap:
+    # One-shot service that registers the snapdragon-id-gateway OAuth2 client
+    # in the running Casdoor instance via its admin REST API. Uses the
+    # `curlimages/curl` image (no shell, so we run curl inside busybox sh via
+    # the alpine/curl mirror — see entrypoint). Idempotent on re-runs.
+    image: alpine/curl:latest
+    depends_on:
+      casdoor:
+        condition: service_healthy
+    volumes:
+      - ./scripts/bootstrap-casdoor.sh:/bootstrap-casdoor.sh:ro
+    environment:
+      CASDOOR_URL: http://casdoor:8000
+      CASDOOR_ADMIN_USERNAME: ${CASDOOR_ADMIN_USERNAME:-admin}
+      CASDOOR_ADMIN_PASSWORD: ${CASDOOR_ADMIN_PASSWORD:-123}
+      CASDOOR_CLIENT_ID: ${CASDOOR_CLIENT_ID:?CASDOOR_CLIENT_ID is required}
+      CASDOOR_CLIENT_SECRET: ${CASDOOR_CLIENT_SECRET:?CASDOOR_CLIENT_SECRET is required}
+      GATEWAY_REDIRECT_URI: ${CASDOOR_REDIRECT_URI:-http://localhost:8080/login/oauth2/code/casdoor}
+    entrypoint: ["sh", "/bootstrap-casdoor.sh"]
+    restart: "no"
+
   gateway:
     build:
       context: .
@@ -106,6 +127,8 @@ services:
         condition: service_healthy
       casdoor:
         condition: service_healthy
+      casdoor-bootstrap:
+        condition: service_completed_successfully
     environment:
       # Activate the casdoor profile so OAuth2ClientConfig builds a
       # ReactiveClientRegistrationRepository by fetching OIDC discovery from
