@@ -1,4 +1,4 @@
-package com.example.gateway.routes;
+package systems.snapdragon.gateway.routes;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;

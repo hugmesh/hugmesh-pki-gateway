@@ -8,7 +8,7 @@ COPY mvnw pom.xml ./
 RUN ./mvnw -B -q dependency:go-offline
 COPY src/ src/
 RUN ./mvnw -B -q -DskipTests package \
- && java -Djarmode=tools -jar target/gateway-0.0.1-SNAPSHOT.jar extract --layers --launcher --destination extracted
+ && java -Djarmode=tools -jar target/snapdragon-id-gateway-0.0.1-SNAPSHOT.jar extract --layers --launcher --destination extracted
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app

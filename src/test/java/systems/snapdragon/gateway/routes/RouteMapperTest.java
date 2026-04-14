@@ -1,4 +1,4 @@
-package com.example.gateway.routes;
+package systems.snapdragon.gateway.routes;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;

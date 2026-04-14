@@ -1,6 +1,6 @@
 spring:
   application:
-    name: gateway
+    name: snapdragon-id-gateway
 
   r2dbc:
     # Default URL targets the replica's published host port (15433) for IDE dev.
@@ -43,4 +43,4 @@ management:
 logging:
   level:
     org.springframework.cloud.gateway: INFO
-    com.example.gateway: DEBUG
+    systems.snapdragon.gateway: DEBUG

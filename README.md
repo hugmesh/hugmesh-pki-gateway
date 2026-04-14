@@ -73,7 +73,7 @@ in-process mock OAuth2 server. Zero external dependencies.
 
 ```
 ./mvnw -DskipTests package
-java -jar target/gateway-0.0.1-SNAPSHOT.jar --spring.profiles.active=local
+java -jar target/snapdragon-id-gateway-0.0.1-SNAPSHOT.jar --spring.profiles.active=local
 ```
 
 Then:
@@ -160,7 +160,7 @@ Runs:
 - **Unit**: `RouteMapperTest` — JSON → `RouteDefinition` conversion,
   including edge cases.
 - **Integration** (Testcontainers Postgres, auto-skipped without Docker):
-  - `GatewayApplicationTests` — context loads against real Postgres.
+  - `SnapdragonGatewayTests` — context loads against real Postgres.
   - `DbRouteDefinitionLocatorIT` — Liquibase-applied schema + seed,
     `DbRouteDefinitionLocator` returns the seed route via R2DBC.
   - `SecurityConfigTest` — unauthenticated request redirects to

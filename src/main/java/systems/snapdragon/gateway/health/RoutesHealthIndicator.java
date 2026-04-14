@@ -1,6 +1,6 @@
-package com.example.gateway.health;
+package systems.snapdragon.gateway.health;
 
-import com.example.gateway.routes.GatewayRouteRepository;
+import systems.snapdragon.gateway.routes.GatewayRouteRepository;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.ReactiveHealthIndicator;
 import org.springframework.stereotype.Component;

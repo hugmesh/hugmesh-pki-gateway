@@ -1,6 +1,6 @@
-package com.example.gateway;
+package systems.snapdragon.gateway;
 
-import com.example.gateway.support.PostgresInitializer;
+import systems.snapdragon.gateway.support.PostgresInitializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -20,7 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @ContextConfiguration(initializers = PostgresInitializer.class)
 @ActiveProfiles("local")
 @Testcontainers(disabledWithoutDocker = true)
-class GatewayApplicationTests {
+class SnapdragonGatewayTests {
 
     @Test
     void contextLoads() {

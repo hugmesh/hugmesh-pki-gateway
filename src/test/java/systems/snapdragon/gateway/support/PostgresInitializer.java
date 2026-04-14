@@ -1,4 +1,4 @@
-package com.example.gateway.support;
+package systems.snapdragon.gateway.support;
 
 import liquibase.Liquibase;
 import liquibase.database.Database;

@@ -1,4 +1,4 @@
-package com.example.gateway;
+package systems.snapdragon.gateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -8,9 +8,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableR2dbcRepositories
 @EnableScheduling
-public class GatewayApplication {
+public class SnapdragonGateway {
 
     public static void main(String[] args) {
-        SpringApplication.run(GatewayApplication.class, args);
+        SpringApplication.run(SnapdragonGateway.class, args);
     }
 }

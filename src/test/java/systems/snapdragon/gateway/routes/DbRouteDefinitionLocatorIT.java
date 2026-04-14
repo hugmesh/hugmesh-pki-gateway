@@ -1,6 +1,6 @@
-package com.example.gateway.routes;
+package systems.snapdragon.gateway.routes;
 
-import com.example.gateway.support.PostgresInitializer;
+import systems.snapdragon.gateway.support.PostgresInitializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

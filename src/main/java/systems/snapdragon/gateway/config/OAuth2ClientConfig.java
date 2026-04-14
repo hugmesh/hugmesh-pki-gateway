@@ -1,4 +1,4 @@
-package com.example.gateway.config;
+package systems.snapdragon.gateway.config;
 
 import no.nav.security.mock.oauth2.MockOAuth2Server;
 import org.slf4j.Logger;

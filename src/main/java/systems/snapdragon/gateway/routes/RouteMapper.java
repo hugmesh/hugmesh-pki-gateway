@@ -1,4 +1,4 @@
-package com.example.gateway.routes;
+package systems.snapdragon.gateway.routes;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

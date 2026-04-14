@@ -12,11 +12,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.example</groupId>
-    <artifactId>gateway</artifactId>
+    <groupId>systems.snapdragon</groupId>
+    <artifactId>snapdragon-id-gateway</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>gateway</name>
-    <description>Reactive Spring Cloud Gateway with Postgres-backed routes</description>
+    <name>snapdragon-id-gateway</name>
+    <description>Reactive Spring Cloud Gateway with Postgres-backed routes and Casdoor OAuth2</description>
 
     <properties>
         <java.version>21</java.version>
