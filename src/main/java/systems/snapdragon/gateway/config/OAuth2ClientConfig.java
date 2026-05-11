@@ -3,34 +3,32 @@ package systems.snapdragon.gateway.config;
 import no.nav.security.mock.oauth2.MockOAuth2Server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.client.registration.InMemoryReactiveClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.ReactiveClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 
 /**
- * OAuth2 client wiring. Exactly one of the two profile-gated repositories
- * below must be active, otherwise Spring Security's {@code oauth2Login()} has
- * no {@link ReactiveClientRegistrationRepository} and the context fails to
- * start.
+ * OAuth2 client wiring — TESTS ONLY.
  *
- * <ul>
- *   <li><b>local</b>: starts an in-process {@link MockOAuth2Server} (the
- *       navikt mock OIDC server, running on a random port) and registers a
- *       client pointing at it. Browser login flows actually complete against
- *       the mock — useful for iterating without any external dependency.</li>
- *   <li><b>casdoor</b>: reads {@code CASDOOR_ISSUER_URI}, {@code CASDOOR_CLIENT_ID},
- *       {@code CASDOOR_CLIENT_SECRET} from the environment and performs OIDC
- *       discovery against the real Casdoor instance. Startup fails fast if
- *       Casdoor is unreachable, which is the intended behavior — we want
- *       deployment-time validation that Casdoor is wired correctly.</li>
- * </ul>
+ * <p>The production Casdoor registration lives entirely in
+ * {@code application.yml} under {@code spring.security.oauth2.client.*}
+ * so each deployment's identity (issuer URI, client id, scopes) is
+ * configuration-driven rather than baked into Java {@code @Bean}
+ * methods. Spring Boot's OAuth2 client auto-configuration reads those
+ * properties and produces a {@link ReactiveClientRegistrationRepository}
+ * automatically — same configuration channel snapdragon.games and the
+ * snapdragon-games-gateway use.
+ *
+ * <p>This class keeps ONE bean for the {@code local} test profile:
+ * an in-process {@link MockOAuth2Server} so unit + integration tests
+ * can complete the Authorization Code flow without an external
+ * Casdoor. When the {@code local} profile is active the bean below
+ * overrides any yaml-derived registration.
  */
 @Configuration
 public class OAuth2ClientConfig {
@@ -42,8 +40,8 @@ public class OAuth2ClientConfig {
 
     /**
      * Boots an in-process mock OIDC server on a random port when the
-     * {@code local} profile is active. Shut down automatically on context
-     * close via {@code destroyMethod = "shutdown"}.
+     * {@code local} profile is active. Shut down automatically on
+     * context close via {@code destroyMethod = "shutdown"}.
      */
     @Bean(destroyMethod = "shutdown")
     @Profile("local")
@@ -81,28 +79,5 @@ public class OAuth2ClientConfig {
                 .build();
 
         return new InMemoryReactiveClientRegistrationRepository(mock);
-    }
-
-    @Bean
-    @Profile("casdoor")
-    public ReactiveClientRegistrationRepository casdoorClientRegistrationRepository(
-            @Value("${CASDOOR_ISSUER_URI}") String issuerUri,
-            @Value("${CASDOOR_CLIENT_ID}") String clientId,
-            @Value("${CASDOOR_CLIENT_SECRET}") String clientSecret,
-            @Value("${CASDOOR_SCOPES:openid,profile,email}") String[] scopes) {
-
-        log.info("OAuth2 profile=casdoor — fetching OIDC discovery from {}", issuerUri);
-
-        ClientRegistration casdoor = ClientRegistrations.fromIssuerLocation(issuerUri)
-                .registrationId(REGISTRATION_ID)
-                .clientId(clientId)
-                .clientSecret(clientSecret)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-                .scope(scopes)
-                .clientName("Casdoor")
-                .build();
-
-        return new InMemoryReactiveClientRegistrationRepository(casdoor);
     }
 }
