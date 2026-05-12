@@ -1,0 +1,16 @@
+{
+  "name": "snapdragon-id-gateway-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright + playwright-bdd e2e suite for snapdragon-id-gateway. Verifies the OAuth2 login redirect, the JWT resource-server gates, and the per-role access matrix end-to-end against a running Casdoor + the gateway.",
+  "scripts": {
+    "bddgen": "bddgen",
+    "test":   "bddgen && playwright test --project=bdd",
+    "test:headed": "bddgen && playwright test --project=bdd --headed",
+    "report": "playwright show-report results/html"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.0",
+    "playwright-bdd":   "8.5.0"
+  }
+}
