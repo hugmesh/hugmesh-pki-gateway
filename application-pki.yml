@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: snapdragon-pki-gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${CASDOOR_ISSUER_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+  cloud:
+    gateway:
+      routes:
+        - id: casdoor-auth
+          uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+          predicates:
+            - Path=/api/auth/**
+        - id: casdoor-login
+          uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+          predicates:
+            - Path=/login/**
+        - id: casdoor-oidc
+          uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+          predicates:
+            - Path=/.well-known/**
+        - id: headscale
+          uri: ${HEADSCALE_URI:http://headscale.snapdragon-pki.svc.cluster.local:8080}
+          predicates:
+            - Host=scale.snapdragon.systems

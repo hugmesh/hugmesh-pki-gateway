@@ -1,9 +1,3 @@
 target/
-.idea/
-.vscode/
-*.iml
+*.class
 .env
-*.log
-
-# Claude Code session artifacts
-.claude/

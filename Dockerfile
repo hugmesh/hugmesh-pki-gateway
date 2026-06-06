@@ -1,22 +1,9 @@
-# syntax=docker/dockerfile:1.6
-# Multi-stage build using Spring Boot layered JARs.
-
-FROM eclipse-temurin:21-jdk-alpine AS builder
-WORKDIR /build
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
-RUN ./mvnw -B -q dependency:go-offline
-COPY src/ src/
-RUN ./mvnw -B -q -DskipTests package \
- && java -Djarmode=tools -jar target/snapdragon-id-gateway-0.0.1-SNAPSHOT.jar extract --layers --launcher --destination extracted
-
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-RUN addgroup -S gateway && adduser -S gateway -G gateway
-USER gateway:gateway
-COPY --from=builder /build/extracted/dependencies/ ./
-COPY --from=builder /build/extracted/spring-boot-loader/ ./
-COPY --from=builder /build/extracted/snapshot-dependencies/ ./
-COPY --from=builder /build/extracted/application/ ./
+# Reuse the shared snapdragon-gateway code as a base image; this repo only
+# layers the pki-gateway identity + route config on top.
+ARG GATEWAY_IMAGE=snapdragon-systems/gateway:dev
+FROM ${GATEWAY_IMAGE}
+ENV SPRING_APPLICATION_NAME=snapdragon-pki-gateway
+COPY application-pki.yml /app/config/application-pki.yml
+COPY liquibase/changelog /app/liquibase/changelog
+ENV SPRING_CONFIG_ADDITIONAL_LOCATION=file:/app/config/
 EXPOSE 8080
-ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

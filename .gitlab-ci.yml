@@ -1,8 +1,7 @@
-# Snapdragon CI — build + push this service's container image to the in-cluster
-# GitLab container registry. The GitHub repo is pull-mirrored into in-cluster
-# GitLab (mirror_trigger_builds=true), so this runs on push / mirror-sync on the
-# privileged x86 runner (shell executor with docker, matching the generator CI).
-# Images carry NO keys — KEYS material is supplied from the USB at first boot.
+# Snapdragon CI — build + push this per-node gateway image to the in-cluster
+# GitLab registry. This image OVERLAYS the shared snapdragon-gateway image, so CI
+# bases the build off that sibling image in the same registry namespace (via the
+# GATEWAY_IMAGE build-arg). Runs on the privileged x86 runner. No keys baked in.
 stages: [build]
 
 build:image:
@@ -13,9 +12,9 @@ build:image:
     - if: '$CI_COMMIT_TAG'
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    # Immutable tag = release tag or git SHA; plus a moving branch tag the deploy/
-    # kustomize can track for dev.
     - export TAG="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}"
-    - docker build --pull -t "$CI_REGISTRY_IMAGE:$TAG" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    # Base off the sibling snapdragon-gateway image in the same registry namespace.
+    - export GATEWAY_IMAGE="${CI_REGISTRY_IMAGE%/*}/snapdragon-gateway:${CI_COMMIT_REF_SLUG}"
+    - docker build --pull --build-arg GATEWAY_IMAGE="$GATEWAY_IMAGE" -t "$CI_REGISTRY_IMAGE:$TAG" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
     - docker push "$CI_REGISTRY_IMAGE:$TAG"
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
