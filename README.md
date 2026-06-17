@@ -28,6 +28,7 @@ docker build -t snapdragon-systems/pki-gateway:dev .
 | **Tier** | identity / PKI |
 | **Namespace** | `snapdragon-pki` (downstreams resolve at `*.snapdragon-pki.svc.cluster.local`) |
 | **`SPRING_APPLICATION_NAME`** | `snapdragon-pki-gateway` (set in the `Dockerfile`; selects this instance's route-access rows) |
+| **Listen port** | `8080` (the gateway itself, `EXPOSE`d in the `Dockerfile`); downstreams are Casdoor `:8000` and headscale `:8080` |
 | **Ingress** | `nginx-internal` — cluster-internal only, never internet-facing |
 | **Sibling gateways** | `snapdragon-be-gateway` (API + matrix + mastodon), `snapdragon-fe-gateway` (host + remotes) |
 
@@ -68,6 +69,22 @@ can reach the login page and a client can fetch JWKS; the token surface floors
 to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
 `GAME-MASTER` / `ADMIN` / `SUPERADMIN` by the shared `SecurityConfig`.
 
+> **`GAME-MASTER` is the games-tier name of the platform `MOD` authority** in
+> the canonical `superadmin → admin → mod → user` cascade. The shared image's
+> `Roles.isGameMaster()` matches the literal Casdoor role name `GAME-MASTER` /
+> `GAME_MASTER` (both spellings), and `SecurityConfig` / the route-access and
+> resource-access filters gate and own-domain-bypass on exactly that name — so
+> this doc uses `GAME-MASTER` where it is naming what the inherited code emits,
+> not a typo for `MOD`.
+
+> **What is provided here vs by the shared image.** The route-access rows and
+> the baked-in canonical seed/fallback above are **provided and enforced by the
+> shared `snapdragon-gateway` base image** (and CRUD'd at runtime by admin-bff —
+> see [Source of truth](#source-of-truth)). THIS repo only seeds the
+> `gateway_routes` *route-definition* table
+> ([`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml));
+> it does **not** ship any `gateway_route_access` seed of its own.
+
 ## How it relates to the gateways / Casdoor / federation / multi-tenancy
 
 - **Casdoor (auth) lives behind this gateway.** This is the door every other
@@ -82,9 +99,11 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
   `DomainRegistry` from the validated issuer — never a user-settable claim. A
   reserved-prefix guard drops any `permissions` entry beginning `ROLE_` /
   `DOMAIN_`, closing the authority-injection / cross-domain-escalation hole.
-- **Least-privilege cascade.** `SUPERADMIN > ADMIN`/`MOD`/`USER`; `SUPERADMIN`
-  is the only cross-domain bypass (the infra control plane), `ADMIN` /
-  `GAME-MASTER` bypass only within their own domain, and any non-superadmin
+- **Least-privilege cascade.** `SUPERADMIN > ADMIN > MOD > USER` (the
+  games-tier name for `MOD` is `GAME-MASTER` — see the note under
+  [Role gates](#role-gates-inherited-from-the-shared-image)). `SUPERADMIN`
+  is the only cross-domain bypass (the infra control plane); `ADMIN` /
+  `GAME-MASTER` bypass only within their own domain; and any non-superadmin
   whose `DOMAIN_<x>` does not match the request's target brand is hard-denied
   before the grant layer is even consulted. `ROLE_IMAGE_BUILDER` is a separate
   per-domain capability.
@@ -105,3 +124,52 @@ snapdragon-pki-gateway` and the pki `routes`. The admin-bff
 `application-pki.yml` and `liquibase/changelog` are the standalone/local-dev
 mirror of that same identity; keep them in sync with the generator Application,
 which stays the deployed source of truth.
+
+## CI
+
+The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml): a single `build` stage
+that bases off the sibling `snapdragon-gateway` image (`GATEWAY_IMAGE`
+build-arg) and pushes this overlay to the in-cluster GitLab registry on the
+privileged `snapdragon-x86` runner, only on the default branch or a tag. No keys
+are baked in. **CI is GitLab-only** — there are intentionally no GitHub Actions
+(`.github/workflows/`) in this repo, in line with the platform's CI = GitLab
+ONLY standard.
+
+## Testing
+
+This is a **config-only overlay with no source or tests of its own**. All
+gateway behavior — the security filter chain, RBAC, the issuer-keyed
+domain-scoping converter, and the route-access / resource-access filters
+(including the `GAME-MASTER`/`ADMIN` own-domain bypass and the reserved-prefix
+guard) — is unit- and e2e-tested in
+[snapdragon-gateway](https://github.com/Snapdragon-Systems/snapdragon-gateway).
+What this repo contributes is the route config (`application-pki.yml`) and the
+`gateway_routes` seed; the meaningful check here is that they stay in sync with
+the deployed generator Application (see [Source of truth](#source-of-truth)). An
+earlier branch carried Java source and a Playwright/Gherkin e2e suite; those
+were removed when the repo was refactored into a pure thin overlay and now live
+in the shared gateway repo.
+
+## Roadmap
+
+State legend: ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR, not merged) ·
+🔭 planned (design only). Everything documented above is ✅ shipped. The items
+below are **not** yet enforced by this overlay — they land via the shared
+`snapdragon-gateway` image and admin-bff changelogs, and this repo inherits them
+when those ship.
+
+- 🔭 **MFA / step-up on identity-tier routes.** Casdoor MFA is design-complete
+  (WebAuthn + TOTP + recovery; admin-bff Liquibase 150-band). Enforcement is via
+  a planned, fail-closed `gateway_route_access.mfa_required` column plus an
+  `amr`/`acr` → `MFA_SATISFIED` authority. Because this gateway consumes
+  `gateway_route_access` rows from the shared image, identity-tier routes will
+  gain MFA / step-up enforcement once the 150-band changelog and shared-image
+  support land. MFA is **not** enforced today.
+- 🔭 **Continuous-OWASP security CI stage.** The platform pen-test standard adds
+  a shared `.gitlab-ci.yml` `include` (ZAP DAST + Dependency-Check SCA + nuclei +
+  k6) to app/service repos. This overlay's pipeline currently has **only** a
+  `build` stage and ships no application surface of its own (all runtime
+  behavior is the shared image, which carries the security stage). Whether the
+  shared security `include` is also wired into gateway-config overlays — or
+  overlays are exempted because they have no own app surface — is still being
+  decided; it is **not** running here yet.
