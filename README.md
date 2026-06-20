@@ -49,14 +49,29 @@ downstreams in the `snapdragon-pki` namespace:
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
 issuer the OAuth2 resource server validates JWTs against.
 
+> **SCG-5 route-prefix note (action needed).** Spring Cloud Gateway 5.0 (the
+> Spring Boot 4 baseline this fleet now runs) moved static route config from
+> `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`;
+> the legacy prefix is **silently ignored and binds zero routes**.
+> `application-pki.yml` in this repo still uses the legacy
+> `spring.cloud.gateway.routes` prefix and must be migrated to
+> `spring.cloud.gateway.server.webflux.routes` to keep the standalone/local-dev
+> mirror functional under SCG-5. The deployed source of truth is the
+> Postgres-backed `gateway_routes` rows (seeded by
+> [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
+> and rendered by the generator Application), which is loaded by the shared
+> image's route loader and is **not** affected by the YAML-prefix move; the
+> static YAML is the dev mirror that needs the rename.
+
 ## Role gates (inherited from the shared image)
 
 Authorization is enforced by the shared gateway code, not re-implemented here.
 After Spring Security authenticates the Casdoor JWT, the per-gateway
 external-access gate consults the admin-managed `gateway_route_access` rows for
-`snapdragon-pki-gateway`. When neither Postgres nor Cassandra is reachable the
-gate falls back to the **baked-in canonical seed** for this tier (so it is never
-silently fail-open):
+`snapdragon-pki-gateway` (the `gateway_route_access` table is the source of
+truth, applied by the shared `GatewayRouteAccessFilter`). When neither Postgres
+nor Cassandra is reachable the gate falls back to the **baked-in canonical
+seed** for this tier (so it is never silently fail-open):
 
 | URL pattern | Role |
 |-------------|------|
@@ -92,6 +107,16 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
   by the Casdoor this gateway fronts. The platform runs **one Casdoor per
   brand**, so the cryptographically-validated `iss` claim is the trustworthy
   tenant discriminator.
+- **Opaque-session bridge (inherited from the shared image).** The browser
+  never holds a Casdoor JWT. login-ui drives a Casdoor OIDC authorization-code
+  (PKCE) redirect and user-bff performs the server-side code→token exchange,
+  holding per-session JWT custody/refresh; the browser only ever carries an
+  **opaque `bff_`-prefixed session**. A pre-security exchange filter in the
+  shared gateway code swaps `bff_` → the internal custody JWT before Spring
+  Security runs, so this gateway stays a **pure Casdoor-JWT OAuth2 resource
+  server** and its JWT validation + role gate run unchanged. This overlay
+  inherits that behavior from the base image; nothing about it is configured
+  here beyond `CASDOOR_ISSUER_URI`.
 - **Issuer-keyed domain scoping (foundation on the shared image).** The shared
   `CasdoorAuthorities` converter stamps every authenticated principal with
   exactly one issuer-derived `DOMAIN_<x>` authority (a non-role authority,
@@ -139,9 +164,9 @@ ONLY standard.
 
 This is a **config-only overlay with no source or tests of its own**. All
 gateway behavior — the security filter chain, RBAC, the issuer-keyed
-domain-scoping converter, and the route-access / resource-access filters
-(including the `GAME-MASTER`/`ADMIN` own-domain bypass and the reserved-prefix
-guard) — is unit- and e2e-tested in
+domain-scoping converter, the `bff_`→JWT exchange filter, and the route-access /
+resource-access filters (including the `GAME-MASTER`/`ADMIN` own-domain bypass
+and the reserved-prefix guard) — is unit- and e2e-tested in
 [snapdragon-gateway](https://github.com/Snapdragon-Systems/snapdragon-gateway).
 What this repo contributes is the route config (`application-pki.yml`) and the
 `gateway_routes` seed; the meaningful check here is that they stay in sync with
@@ -150,21 +175,62 @@ earlier branch carried Java source and a Playwright/Gherkin e2e suite; those
 were removed when the repo was refactored into a pure thin overlay and now live
 in the shared gateway repo.
 
+## Current State
+
+- **Ecosystem baseline.** The fleet now runs **Spring Boot 4.0.2 / Spring Cloud
+  2025.1** on Java, with shared Maven artifacts `snapdragon-parent` (metapom
+  2.0.0), `snapdragon-commons` (shared security/tenancy, `systems.snapdragon.commons.*`,
+  2.0.0) and the new `snapdragon-auth-core` (2.0.0, shared
+  account/session/MFA/Casdoor-admin infra; consumed by user-bff and admin-bff
+  only — **not** by this gateway). This overlay carries no Java of its own, so
+  it inherits the baseline entirely through the shared `snapdragon-gateway`
+  base image; there is no Boot-version pin in this repo.
+- **Auth model (live this cycle).** Casdoor is the SSO IdP. login-ui runs the
+  OIDC authorization-code (PKCE) redirect; **user-bff** performs the
+  server-side code→token exchange and holds per-session JWT custody/refresh; the
+  browser only ever holds an opaque `bff_` session. The gateway remains a pure
+  Casdoor-JWT resource server, with the shared image's pre-security exchange
+  filter swapping `bff_` → the internal custody JWT. Login/session/account
+  *logic* is being relocated from admin-bff to user-bff (shared core extracted
+  to `snapdragon-auth-core`); the account/session **data** stays in
+  admin-bff-db, reached by user-bff over mTLS + `X-Internal-Token`. None of this
+  is configured in this repo — it is named here only so the docs match the
+  current platform reality and do **not** imply login lives in admin-bff.
+- **Authorization data path.** `gateway_route_access` (Postgres) is the source
+  of truth, applied by the shared `GatewayRouteAccessFilter`; ADMIN /
+  GAME-MASTER bypass within their own domain, SUPERADMIN cross-domain.
+- **SCG-5 route namespace.** SCG 5.0 moved static route config to
+  `spring.cloud.gateway.server.webflux.routes`; `application-pki.yml` here
+  still uses the legacy `spring.cloud.gateway.routes` prefix and needs the
+  rename (see the note under [What it routes](#what-it-routes)). The deployed
+  Postgres-backed `gateway_routes` path is unaffected.
+- **Cloudflare** fronts prod (this gateway stays internal-only behind it).
+- Everything in the sections above is shipped on `main` except the SCG-5 YAML
+  rename, which is the one outstanding correction in this repo's dev mirror.
+
 ## Roadmap
 
 State legend: ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR, not merged) ·
-🔭 planned (design only). Everything documented above is ✅ shipped. The items
-below are **not** yet enforced by this overlay — they land via the shared
-`snapdragon-gateway` image and admin-bff changelogs, and this repo inherits them
-when those ship.
+🔭 planned (design only). Everything documented above is ✅ shipped, except the
+SCG-5 YAML-prefix rename noted as 🚧 below. The remaining items are **not** yet
+enforced by this overlay — they land via the shared `snapdragon-gateway` image
+and admin-bff changelogs, and this repo inherits them when those ship.
 
+- 🚧 **SCG-5 static-route prefix rename.** Migrate `application-pki.yml` from
+  `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`
+  so the local-dev mirror binds routes under Boot 4 / SCG 5. The deployed
+  Postgres `gateway_routes` path already works; this is the dev-mirror fix.
+- 🚧 **SSO end-to-end + e2e.** The Casdoor OIDC → user-bff custody-JWT →
+  opaque `bff_` session flow (with the gateway's `bff_`→JWT exchange filter) is
+  being brought up live end-to-end and covered by e2e. The gateway behavior is
+  in the shared image; this overlay inherits it.
 - 🔭 **MFA / step-up on identity-tier routes.** Casdoor MFA is design-complete
-  (WebAuthn + TOTP + recovery; admin-bff Liquibase 150-band). Enforcement is via
-  a planned, fail-closed `gateway_route_access.mfa_required` column plus an
-  `amr`/`acr` → `MFA_SATISFIED` authority. Because this gateway consumes
-  `gateway_route_access` rows from the shared image, identity-tier routes will
-  gain MFA / step-up enforcement once the 150-band changelog and shared-image
-  support land. MFA is **not** enforced today.
+  (WebAuthn + TOTP + recovery; per-role defaults; admin-bff Liquibase 150-band).
+  Enforcement is via a planned, fail-closed `gateway_route_access.mfa_required`
+  column plus an `amr`/`acr` → `MFA_SATISFIED` authority. Because this gateway
+  consumes `gateway_route_access` rows from the shared image, identity-tier
+  routes will gain MFA / step-up enforcement once the 150-band changelog and
+  shared-image support land. MFA is **not** enforced today.
 - 🔭 **Continuous-OWASP security CI stage.** The platform pen-test standard adds
   a shared `.gitlab-ci.yml` `include` (ZAP DAST + Dependency-Check SCA + nuclei +
   k6) to app/service repos. This overlay's pipeline currently has **only** a
