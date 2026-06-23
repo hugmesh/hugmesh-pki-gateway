@@ -49,19 +49,18 @@ downstreams in the `snapdragon-pki` namespace:
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
 issuer the OAuth2 resource server validates JWTs against.
 
-> **SCG-5 route-prefix note (action needed).** Spring Cloud Gateway 5.0 (the
+> **SCG-5 route-prefix note (DONE).** Spring Cloud Gateway 5.0 (the
 > Spring Boot 4 baseline this fleet now runs) moved static route config from
 > `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`;
 > the legacy prefix is **silently ignored and binds zero routes**.
-> `application-pki.yml` in this repo still uses the legacy
-> `spring.cloud.gateway.routes` prefix and must be migrated to
-> `spring.cloud.gateway.server.webflux.routes` to keep the standalone/local-dev
-> mirror functional under SCG-5. The deployed source of truth is the
+> `application-pki.yml` has been **migrated** to
+> `spring.cloud.gateway.server.webflux.routes` (matching the sibling
+> be-/fe-/snapdragon-gateway configs), so the standalone/local-dev mirror binds
+> its casdoor + headscale routes under SCG-5. The deployed source of truth is the
 > Postgres-backed `gateway_routes` rows (seeded by
 > [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
 > and rendered by the generator Application), which is loaded by the shared
-> image's route loader and is **not** affected by the YAML-prefix move; the
-> static YAML is the dev mirror that needs the rename.
+> image's route loader and is **not** affected by the YAML-prefix move.
 
 ## Role gates (inherited from the shared image)
 
@@ -200,26 +199,26 @@ in the shared gateway repo.
   of truth, applied by the shared `GatewayRouteAccessFilter`; ADMIN /
   GAME-MASTER bypass within their own domain, SUPERADMIN cross-domain.
 - **SCG-5 route namespace.** SCG 5.0 moved static route config to
-  `spring.cloud.gateway.server.webflux.routes`; `application-pki.yml` here
-  still uses the legacy `spring.cloud.gateway.routes` prefix and needs the
-  rename (see the note under [What it routes](#what-it-routes)). The deployed
-  Postgres-backed `gateway_routes` path is unaffected.
+  `spring.cloud.gateway.server.webflux.routes`; `application-pki.yml` has been
+  migrated off the legacy `spring.cloud.gateway.routes` prefix (see the note
+  under [What it routes](#what-it-routes)). The deployed Postgres-backed
+  `gateway_routes` path is unaffected.
 - **Cloudflare** fronts prod (this gateway stays internal-only behind it).
-- Everything in the sections above is shipped on `main` except the SCG-5 YAML
-  rename, which is the one outstanding correction in this repo's dev mirror.
+- Everything in the sections above is shipped on `main`.
 
 ## Roadmap
 
 State legend: ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR, not merged) ·
-🔭 planned (design only). Everything documented above is ✅ shipped, except the
-SCG-5 YAML-prefix rename noted as 🚧 below. The remaining items are **not** yet
-enforced by this overlay — they land via the shared `snapdragon-gateway` image
-and admin-bff changelogs, and this repo inherits them when those ship.
+🔭 planned (design only). Everything documented above is ✅ shipped. The remaining
+items below are **not** yet enforced by this overlay — they land via the shared
+`snapdragon-gateway` image and admin-bff changelogs, and this repo inherits them
+when those ship.
 
-- 🚧 **SCG-5 static-route prefix rename.** Migrate `application-pki.yml` from
+- ✅ **SCG-5 static-route prefix rename.** `application-pki.yml` migrated from
   `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`
-  so the local-dev mirror binds routes under Boot 4 / SCG 5. The deployed
-  Postgres `gateway_routes` path already works; this is the dev-mirror fix.
+  so the static config binds routes under Boot 4 / SCG 5 (matches the sibling
+  be-/fe-/snapdragon-gateway configs). The deployed Postgres `gateway_routes`
+  path already worked; this fixes the image's baked static config too.
 - 🚧 **SSO end-to-end + e2e.** The Casdoor OIDC → user-bff custody-JWT →
   opaque `bff_` session flow (with the gateway's `bff_`→JWT exchange filter) is
   being brought up live end-to-end and covered by e2e. The gateway behavior is
