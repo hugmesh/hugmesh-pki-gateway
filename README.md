@@ -178,8 +178,8 @@ in the shared gateway repo.
 
 - **Ecosystem baseline.** The fleet now runs **Spring Boot 4.0.2 / Spring Cloud
   2025.1** on Java, with shared Maven artifacts `snapdragon-parent` (metapom
-  2.0.0), `snapdragon-commons` (shared security/tenancy, `systems.snapdragon.commons.*`,
-  2.0.0) and the new `snapdragon-auth-core` (2.0.0, shared
+  2.4.0), `snapdragon-commons` (shared security/tenancy, `systems.snapdragon.commons.*`,
+  2.0.0) and the new `snapdragon-auth-core` (2.3.0, shared
   account/session/MFA/Casdoor-admin infra; consumed by user-bff and admin-bff
   only — **not** by this gateway). This overlay carries no Java of its own, so
   it inherits the baseline entirely through the shared `snapdragon-gateway`
