@@ -180,7 +180,7 @@ in the shared gateway repo.
   2025.1.2** on **Java 25 LTS** (`eclipse-temurin:25`), with shared Maven
   artifacts `snapdragon-parent` (metapom
   2.7.0), `snapdragon-commons` (shared security/tenancy, `systems.snapdragon.commons.*`,
-  2.0.0) and the new `snapdragon-auth-core` (2.3.0, shared
+  2.7.0) and the new `snapdragon-auth-core` (2.3.0, shared
   account/session/MFA/Casdoor-admin infra; consumed by user-bff and admin-bff
   only — **not** by this gateway). This overlay carries no Java of its own, so
   it inherits the baseline entirely through the shared `snapdragon-gateway`
