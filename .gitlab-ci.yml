@@ -2,6 +2,12 @@
 # GitLab registry. This image OVERLAYS the shared snapdragon-gateway image, so CI
 # bases the build off that sibling image in the same registry namespace (via the
 # GATEWAY_IMAGE build-arg). Runs on the privileged x86 runner. No keys baked in.
+#
+# NOTE — pen-test stage: this overlay is deliberately EXEMPT from the shared
+# OWASP pentest include (see README "Continuous-OWASP security CI stage"): the
+# repo carries only config (no dependency manifest, no app code), and the shared
+# snapdragon-gateway image it overlays runs the full pentest stage in its own
+# repo. If this repo ever gains its own app surface, adopt the include.
 stages: [build]
 
 build:image:

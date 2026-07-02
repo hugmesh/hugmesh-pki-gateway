@@ -231,11 +231,19 @@ when those ship.
   consumes `gateway_route_access` rows from the shared image, identity-tier
   routes will gain MFA / step-up enforcement once the 150-band changelog and
   shared-image support land. MFA is **not** enforced today.
-- 🔭 **Continuous-OWASP security CI stage.** The platform pen-test standard adds
-  a shared `.gitlab-ci.yml` `include` (ZAP DAST + Dependency-Check SCA + nuclei +
-  k6) to app/service repos. This overlay's pipeline currently has **only** a
-  `build` stage and ships no application surface of its own (all runtime
-  behavior is the shared image, which carries the security stage). Whether the
-  shared security `include` is also wired into gateway-config overlays — or
-  overlays are exempted because they have no own app surface — is still being
-  decided; it is **not** running here yet.
+- ✅ **Continuous-OWASP security CI stage — DECIDED: this overlay is EXEMPT.**
+  The platform pen-test standard adds a shared `.gitlab-ci.yml` `include`
+  (ZAP DAST + Dependency-Check SCA + nuclei + k6) to app/service repos.
+  Decision (2026-07 hygiene pass): gateway-config overlays like this repo are
+  **exempted**, for two verifiable reasons. (1) This repo contains no
+  dependency manifest and no application code — only a `Dockerfile`,
+  `application-pki.yml`, and Liquibase changelogs — so a Dependency-Check SCA
+  job here would scan nothing and report a vacuous green. (2) Every byte of
+  runtime behavior comes from the shared `snapdragon-gateway` image, whose own
+  repo carries the full pen-test stage jobs (`pentest:sca` + `pentest:dast`
+  extending the centralized generator template — see that repo for the current
+  execution status of its DAST leg); a DAST run from this repo would re-scan
+  that sibling artifact, double-counting coverage without testing anything this
+  overlay adds. **Revisit trigger:** if this overlay ever gains its own
+  dependency manifest or app surface (anything beyond config/changelogs), it
+  MUST adopt the shared `include` like the app/service repos.
