@@ -2,6 +2,17 @@
 <databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+  <!--
+    NOTE: The URI values below are standalone/local-dev seed defaults only.
+    They are plain literals (Liquibase does not support Spring's
+    ${VAR:default} relaxed-binding placeholder syntax used in
+    ../../application-pki.yml), so if CASDOOR_URI or HEADSCALE_URI is
+    overridden via env var for a given environment, these seeded fallback
+    rows will NOT pick up the override and can drift from the live YAML
+    config. Keep these literals in sync with application-pki.yml's defaults
+    by hand; see README.md "Source of truth" section for the authoritative
+    config location.
+  -->
   <changeSet id="seed-pki-routes" author="snapdragon">
     <insert tableName="gateway_routes">
       <column name="route_id" value="casdoor-auth"/>

@@ -149,6 +149,19 @@ snapdragon-pki-gateway` and the pki `routes`. The admin-bff
 mirror of that same identity; keep them in sync with the generator Application,
 which stays the deployed source of truth.
 
+## Known Gaps / TODO
+
+- **Liquibase seed rows can silently drift from `application-pki.yml`.** The
+  `gateway_routes` insert statements in
+  [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
+  hardcode the Casdoor/headscale URIs as plain literals — Liquibase XML does
+  not support Spring's `${VAR:default}` relaxed-binding syntax used in
+  `application-pki.yml` — so a `CASDOOR_URI` or `HEADSCALE_URI` env override
+  applied at deploy time will **not** propagate to these seeded fallback rows.
+  If the defaults in either file are ever changed, the other must be updated
+  by hand (see the changeSet comment in that file and the "Source of truth"
+  section above).
+
 ## CI
 
 The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml): a single `build` stage
