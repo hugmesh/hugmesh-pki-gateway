@@ -38,6 +38,22 @@ The route table is config-driven (`application-pki.yml`, mirrored into the
 `gateway_routes` Liquibase seed). All four routes are identity-tier
 downstreams in the `snapdragon-pki` namespace:
 
+```mermaid
+flowchart LR
+    ingress["nginx-internal ingress<br/>(cluster-internal only)"] --> gw["snapdragon-pki-gateway<br/>(shared gateway image +<br/>this repo's route config/seed)"]
+    gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
+    gw -->|Path=/login/**| casdoor
+    gw -->|Path=/.well-known/**| casdoor
+    gw -->|Host=scale.snapdragon.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
+    beGw["snapdragon-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
+    feGw["snapdragon-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
+```
+
+*Solid arrows are this gateway's own proxied routes; dashed arrows show why
+the sibling gateways depend on the Casdoor this gateway fronts (they validate
+JWTs it mints, per [How it relates](#how-it-relates-to-the-gateways--casdoor--federation--multi-tenancy)
+below) — they do not send traffic through this gateway itself.*
+
 | Route id | Predicate | Downstream | Purpose |
 |----------|-----------|------------|---------|
 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
