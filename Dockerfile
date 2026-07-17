@@ -6,4 +6,20 @@ ENV SPRING_APPLICATION_NAME=snapdragon-pki-gateway
 COPY application-pki.yml /app/config/application-pki.yml
 COPY liquibase/changelog /app/liquibase/changelog
 ENV SPRING_CONFIG_ADDITIONAL_LOCATION=file:/app/config/
+# application-pki.yml is a profile-specific document (application-{profile}.yml).
+# SPRING_CONFIG_ADDITIONAL_LOCATION above only adds a SEARCH DIRECTORY — it does
+# NOT activate a profile — so Boot reads that file only when profile "pki" is
+# active, and the shared snapdragon-gateway base image activates no profile at
+# all (verified on its origin/main: no SPRING_PROFILES_ACTIVE / spring.profiles /
+# setAdditionalProfiles reference anywhere in that repo). Without the line below
+# the overlay is silently never read and the image falls back to the base
+# application.yml's api-default route (/api/** -> api:8080) — i.e. the WRONG
+# route table rather than an obvious failure: every casdoor + headscale route
+# here would simply be absent. Mirrors the canonical fix in snapdragon-generator's
+# snapdragon-gateway chart (SPRING_PROFILES_ACTIVE=routes).
+#
+# This ENV is a DEFAULT only: `docker run -e SPRING_PROFILES_ACTIVE=…` or a k8s
+# env entry REPLACES it (replaces, not appends — pass "pki,other" to keep this
+# file loading alongside another profile).
+ENV SPRING_PROFILES_ACTIVE=pki
 EXPOSE 8080
