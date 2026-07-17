@@ -177,6 +177,22 @@ which stays the deployed source of truth.
   If the defaults in either file are ever changed, the other must be updated
   by hand (see the changeSet comment in that file and the "Source of truth"
   section above).
+- **`docker build .` of this repo produces an image whose static route table
+  never loads (fix open, PR #16, not yet merged as of this writing).** The
+  `Dockerfile` sets `SPRING_CONFIG_ADDITIONAL_LOCATION` (a config *search
+  directory*) but never `SPRING_PROFILES_ACTIVE`, and `application-pki.yml` is
+  a profile-specific document (`application-{profile}.yml` naming) that Spring
+  Boot only reads when profile `pki` is active — which nothing currently
+  activates. The built image falls back to the base image's packaged
+  `api-default` route instead of the casdoor/headscale routes above.
+  **This is not a live incident**: the cluster deployment does not use this
+  repo's built image — it renders the shared `snapdragon-gateway` Helm chart
+  directly (see [Source of truth](#source-of-truth)), and that chart already
+  sets `SPRING_PROFILES_ACTIVE`. It only means this repo's own `docker build`
+  output misroutes if run/deployed standalone. Same bug class as the
+  fleet-wide `SPRING_CONFIG_ADDITIONAL_LOCATION`-without-`SPRING_PROFILES_ACTIVE`
+  gap already fixed for the local-compose stack and the Helm chart
+  (`generator#261` / `generator#275`).
 
 ## CI
 
