@@ -1,35 +1,35 @@
 spring:
   application:
-    name: snapdragon-pki-gateway
+    name: hugmesh-pki-gateway
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${CASDOOR_ISSUER_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+          issuer-uri: ${CASDOOR_ISSUER_URI:http://casdoor.hugmesh-pki.svc.cluster.local:8000}
   cloud:
     gateway:
       # SCG 5.0 (Spring Boot 4) moved route config to
       # spring.cloud.gateway.server.webflux.* — the legacy spring.cloud.gateway.routes
       # prefix binds NOTHING under SCG 5.0 (silent empty list), so these routes must live
       # under server.webflux to be honoured. This mirrors the fix already on the sibling
-      # be-/fe-/snapdragon-gateway configs; without it the PKI gateway's casdoor + headscale
+      # be-/fe-/hugmesh-gateway configs; without it the PKI gateway's casdoor + headscale
       # routes are dead (every request falls through to a 404) on the shared Boot-4 image.
       server:
         webflux:
           routes:
             - id: casdoor-auth
-              uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+              uri: ${CASDOOR_URI:http://casdoor.hugmesh-pki.svc.cluster.local:8000}
               predicates:
                 - Path=/api/auth/**
             - id: casdoor-login
-              uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+              uri: ${CASDOOR_URI:http://casdoor.hugmesh-pki.svc.cluster.local:8000}
               predicates:
                 - Path=/login/**
             - id: casdoor-oidc
-              uri: ${CASDOOR_URI:http://casdoor.snapdragon-pki.svc.cluster.local:8000}
+              uri: ${CASDOOR_URI:http://casdoor.hugmesh-pki.svc.cluster.local:8000}
               predicates:
                 - Path=/.well-known/**
             - id: headscale
-              uri: ${HEADSCALE_URI:http://headscale.snapdragon-pki.svc.cluster.local:8080}
+              uri: ${HEADSCALE_URI:http://headscale.hugmesh-pki.svc.cluster.local:8080}
               predicates:
-                - Host=scale.snapdragon.systems
+                - Host=scale.hugmesh.systems

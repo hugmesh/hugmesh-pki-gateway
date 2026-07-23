@@ -1,15 +1,15 @@
-# snapdragon-pki-gateway
+# hugmesh-pki-gateway
 
-Per-node-type instance of the Snapdragon Spring Cloud Gateway — the **identity
+Per-node-type instance of the HugMesh Spring Cloud Gateway — the **identity
 tier** front door. It fronts Casdoor (auth / login / OIDC) and headscale (the
 VPN/tailnet control plane). Internal-only (ingress class `nginx-internal`),
 never internet-facing, and it validates the internal Casdoor JWT — no external
 login is exposed.
 
 It is **the same image and code as
-[snapdragon-gateway](https://github.com/Snapdragon-Systems/snapdragon-gateway)**.
-Like its [be-](https://github.com/Snapdragon-Systems/snapdragon-be-gateway) and
-[fe-gateway](https://github.com/Snapdragon-Systems/snapdragon-fe-gateway)
+[hugmesh-gateway](https://github.com/HugMesh/hugmesh-gateway)**.
+Like its [be-](https://github.com/HugMesh/hugmesh-be-gateway) and
+[fe-gateway](https://github.com/HugMesh/hugmesh-fe-gateway)
 siblings this repo is a **thin overlay**: only the `SPRING_APPLICATION_NAME`, the
 Postgres-backed route set (Liquibase), and the downstream URIs differ. The image
 builds `FROM` the shared gateway image so every device runs identical, audited
@@ -17,8 +17,8 @@ gateway code — the same security filter chain, RBAC, domain-scoping converter,
 and Cassandra-cached revocation / route-access / URL registry.
 
 ```bash
-# bases off the sibling snapdragon-gateway image (GATEWAY_IMAGE build-arg)
-docker build -t snapdragon-systems/pki-gateway:dev .
+# bases off the sibling hugmesh-gateway image (GATEWAY_IMAGE build-arg)
+docker build -t hugmesh-systems/pki-gateway:dev .
 ```
 
 ## Tier & namespace
@@ -26,27 +26,27 @@ docker build -t snapdragon-systems/pki-gateway:dev .
 | | |
 |---|---|
 | **Tier** | identity / PKI |
-| **Namespace** | `snapdragon-pki` (downstreams resolve at `*.snapdragon-pki.svc.cluster.local`) |
-| **`SPRING_APPLICATION_NAME`** | `snapdragon-pki-gateway` (set in the `Dockerfile`; selects this instance's route-access rows) |
+| **Namespace** | `hugmesh-pki` (downstreams resolve at `*.hugmesh-pki.svc.cluster.local`) |
+| **`SPRING_APPLICATION_NAME`** | `hugmesh-pki-gateway` (set in the `Dockerfile`; selects this instance's route-access rows) |
 | **Listen port** | `8080` (the gateway itself, `EXPOSE`d in the `Dockerfile`); downstreams are Casdoor `:8000` and headscale `:8080` |
 | **Ingress** | `nginx-internal` — cluster-internal only, never internet-facing |
-| **Sibling gateways** | `snapdragon-be-gateway` (API + matrix + mastodon), `snapdragon-fe-gateway` (host + remotes) |
+| **Sibling gateways** | `hugmesh-be-gateway` (API + matrix + mastodon), `hugmesh-fe-gateway` (host + remotes) |
 
 ## What it routes
 
 The route table is config-driven (`application-pki.yml`, mirrored into the
 `gateway_routes` Liquibase seed). All four routes are identity-tier
-downstreams in the `snapdragon-pki` namespace:
+downstreams in the `hugmesh-pki` namespace:
 
 ```mermaid
 flowchart LR
-    ingress["nginx-internal ingress<br/>(cluster-internal only)"] --> gw["snapdragon-pki-gateway<br/>(shared gateway image +<br/>this repo's route config/seed)"]
+    ingress["nginx-internal ingress<br/>(cluster-internal only)"] --> gw["hugmesh-pki-gateway<br/>(shared gateway image +<br/>this repo's route config/seed)"]
     gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
     gw -->|Path=/login/**| casdoor
     gw -->|Path=/.well-known/**| casdoor
-    gw -->|Host=scale.snapdragon.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
-    beGw["snapdragon-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
-    feGw["snapdragon-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
+    gw -->|Host=scale.hugmesh.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
+    beGw["hugmesh-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
+    feGw["hugmesh-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
 ```
 
 *Solid arrows are this gateway's own proxied routes; dashed arrows show why
@@ -59,7 +59,7 @@ below) — they do not send traffic through this gateway itself.*
 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
 | `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
 | `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
-| `headscale` | `Host=scale.snapdragon.systems` | headscale `:8080` | tailnet / VPN control plane |
+| `headscale` | `Host=scale.hugmesh.systems` | headscale `:8080` | tailnet / VPN control plane |
 
 `CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are env-overridable
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
@@ -71,7 +71,7 @@ issuer the OAuth2 resource server validates JWTs against.
 > the legacy prefix is **silently ignored and binds zero routes**.
 > `application-pki.yml` has been **migrated** to
 > `spring.cloud.gateway.server.webflux.routes` (matching the sibling
-> be-/fe-/snapdragon-gateway configs), so the standalone/local-dev mirror binds
+> be-/fe-/hugmesh-gateway configs), so the standalone/local-dev mirror binds
 > its casdoor + headscale routes under SCG-5. The deployed source of truth is the
 > Postgres-backed `gateway_routes` rows (seeded by
 > [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
@@ -83,7 +83,7 @@ issuer the OAuth2 resource server validates JWTs against.
 Authorization is enforced by the shared gateway code, not re-implemented here.
 After Spring Security authenticates the Casdoor JWT, the per-gateway
 external-access gate consults the admin-managed `gateway_route_access` rows for
-`snapdragon-pki-gateway` (the `gateway_route_access` table is the source of
+`hugmesh-pki-gateway` (the `gateway_route_access` table is the source of
 truth, applied by the shared `GatewayRouteAccessFilter`). When neither Postgres
 nor Cassandra is reachable the gate falls back to the **baked-in canonical
 seed** for this tier (so it is never silently fail-open):
@@ -109,7 +109,7 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
 
 > **What is provided here vs by the shared image.** The route-access rows and
 > the baked-in canonical seed/fallback above are **provided and enforced by the
-> shared `snapdragon-gateway` base image** (and CRUD'd at runtime by admin-bff —
+> shared `hugmesh-gateway` base image** (and CRUD'd at runtime by admin-bff —
 > see [Source of truth](#source-of-truth)). THIS repo only seeds the
 > `gateway_routes` *route-definition* table
 > ([`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml));
@@ -157,10 +157,10 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
 
 The route table and per-instance config that actually run in the cluster come
 from the generator's ArgoCD Application
-[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/snapdragon-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
-which renders the shared `snapdragon-gateway` Helm chart with `instance.name:
-snapdragon-pki-gateway` and the pki `routes`. The admin-bff
-(`snapdragon-admin-bff-api`) CRUDs the `gateway_route_access` rows. This repo's
+[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/HugMesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
+which renders the shared `hugmesh-gateway` Helm chart with `instance.name:
+hugmesh-pki-gateway` and the pki `routes`. The admin-bff
+(`hugmesh-admin-bff-api`) CRUDs the `gateway_route_access` rows. This repo's
 `application-pki.yml` and `liquibase/changelog` are the standalone/local-dev
 mirror of that same identity; keep them in sync with the generator Application,
 which stays the deployed source of truth.
@@ -186,7 +186,7 @@ which stays the deployed source of truth.
   activates. The built image falls back to the base image's packaged
   `api-default` route instead of the casdoor/headscale routes above.
   **This is not a live incident**: the cluster deployment does not use this
-  repo's built image — it renders the shared `snapdragon-gateway` Helm chart
+  repo's built image — it renders the shared `hugmesh-gateway` Helm chart
   directly (see [Source of truth](#source-of-truth)), and that chart already
   sets `SPRING_PROFILES_ACTIVE`. It only means this repo's own `docker build`
   output misroutes if run/deployed standalone. Same bug class as the
@@ -197,9 +197,9 @@ which stays the deployed source of truth.
 ## CI
 
 The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml): a single `build` stage
-that bases off the sibling `snapdragon-gateway` image (`GATEWAY_IMAGE`
+that bases off the sibling `hugmesh-gateway` image (`GATEWAY_IMAGE`
 build-arg) and pushes this overlay to the in-cluster GitLab registry on the
-privileged `snapdragon-x86` runner, only on the default branch or a tag. No keys
+privileged `hugmesh-x86` runner, only on the default branch or a tag. No keys
 are baked in. **CI is GitLab-only** — there are intentionally no GitHub Actions
 (`.github/workflows/`) in this repo, in line with the platform's CI = GitLab
 ONLY standard.
@@ -211,7 +211,7 @@ gateway behavior — the security filter chain, RBAC, the issuer-keyed
 domain-scoping converter, the `bff_`→JWT exchange filter, and the route-access /
 resource-access filters (including the `GAME-MASTER`/`ADMIN` own-domain bypass
 and the reserved-prefix guard) — is unit- and e2e-tested in
-[snapdragon-gateway](https://github.com/Snapdragon-Systems/snapdragon-gateway).
+[hugmesh-gateway](https://github.com/HugMesh/hugmesh-gateway).
 What this repo contributes is the route config (`application-pki.yml`) and the
 `gateway_routes` seed; the meaningful check here is that they stay in sync with
 the deployed generator Application (see [Source of truth](#source-of-truth)). An
@@ -223,12 +223,12 @@ in the shared gateway repo.
 
 - **Ecosystem baseline.** The fleet now runs **Spring Boot 4.0.7 / Spring Cloud
   2025.1.2** on **Java 25 LTS** (`eclipse-temurin:25`), with shared Maven
-  artifacts `snapdragon-parent` (metapom
-  2.7.0), `snapdragon-commons` (shared security/tenancy, `systems.snapdragon.commons.*`,
-  2.7.0) and the new `snapdragon-auth-core` (2.3.0, shared
+  artifacts `hugmesh-parent` (metapom
+  2.7.0), `hugmesh-commons` (shared security/tenancy, `systems.hugmesh.commons.*`,
+  2.7.0) and the new `hugmesh-auth-core` (2.3.0, shared
   account/session/MFA/Casdoor-admin infra; consumed by user-bff and admin-bff
   only — **not** by this gateway). This overlay carries no Java of its own, so
-  it inherits the baseline entirely through the shared `snapdragon-gateway`
+  it inherits the baseline entirely through the shared `hugmesh-gateway`
   base image; there is no Boot-version pin in this repo.
 - **Auth model (live this cycle).** Casdoor is the SSO IdP. login-ui runs the
   OIDC authorization-code (PKCE) redirect; **user-bff** performs the
@@ -237,7 +237,7 @@ in the shared gateway repo.
   Casdoor-JWT resource server, with the shared image's pre-security exchange
   filter swapping `bff_` → the internal custody JWT. Login/session/account
   *logic* is being relocated from admin-bff to user-bff (shared core extracted
-  to `snapdragon-auth-core`); the account/session **data** stays in
+  to `hugmesh-auth-core`); the account/session **data** stays in
   admin-bff-db, reached by user-bff over mTLS + `X-Internal-Token`. None of this
   is configured in this repo — it is named here only so the docs match the
   current platform reality and do **not** imply login lives in admin-bff.
@@ -257,13 +257,13 @@ in the shared gateway repo.
 State legend: ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR, not merged) ·
 🔭 planned (design only). Everything documented above is ✅ shipped. The remaining
 items below are **not** yet enforced by this overlay — they land via the shared
-`snapdragon-gateway` image and admin-bff changelogs, and this repo inherits them
+`hugmesh-gateway` image and admin-bff changelogs, and this repo inherits them
 when those ship.
 
 - ✅ **SCG-5 static-route prefix rename.** `application-pki.yml` migrated from
   `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`
   so the static config binds routes under Boot 4 / SCG 5 (matches the sibling
-  be-/fe-/snapdragon-gateway configs). The deployed Postgres `gateway_routes`
+  be-/fe-/hugmesh-gateway configs). The deployed Postgres `gateway_routes`
   path already worked; this fixes the image's baked static config too.
 - 🚧 **SSO end-to-end + e2e.** The Casdoor OIDC → user-bff custody-JWT →
   opaque `bff_` session flow (with the gateway's `bff_`→JWT exchange filter) is
@@ -284,7 +284,7 @@ when those ship.
   dependency manifest and no application code — only a `Dockerfile`,
   `application-pki.yml`, and Liquibase changelogs — so a Dependency-Check SCA
   job here would scan nothing and report a vacuous green. (2) Every byte of
-  runtime behavior comes from the shared `snapdragon-gateway` image, whose own
+  runtime behavior comes from the shared `hugmesh-gateway` image, whose own
   repo carries the full pen-test stage jobs (`pentest:sca` + `pentest:dast`
   extending the centralized generator template — see that repo for the current
   execution status of its DAST leg); a DAST run from this repo would re-scan
