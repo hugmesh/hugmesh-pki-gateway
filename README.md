@@ -7,9 +7,9 @@ never internet-facing, and it validates the internal Casdoor JWT — no external
 login is exposed.
 
 It is **the same image and code as
-[hugmesh-gateway](https://github.com/HugMesh/hugmesh-gateway)**.
-Like its [be-](https://github.com/HugMesh/hugmesh-be-gateway) and
-[fe-gateway](https://github.com/HugMesh/hugmesh-fe-gateway)
+[hugmesh-gateway](https://github.com/Snapdragon-Systems/hugmesh-gateway)**.
+Like its [be-](https://github.com/Snapdragon-Systems/hugmesh-be-gateway) and
+[fe-gateway](https://github.com/Snapdragon-Systems/hugmesh-fe-gateway)
 siblings this repo is a **thin overlay**: only the `SPRING_APPLICATION_NAME`, the
 Postgres-backed route set (Liquibase), and the downstream URIs differ. The image
 builds `FROM` the shared gateway image so every device runs identical, audited
@@ -157,7 +157,7 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
 
 The route table and per-instance config that actually run in the cluster come
 from the generator's ArgoCD Application
-[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/HugMesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
+[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
 which renders the shared `hugmesh-gateway` Helm chart with `instance.name:
 hugmesh-pki-gateway` and the pki `routes`. The admin-bff
 (`hugmesh-admin-bff-api`) CRUDs the `gateway_route_access` rows. This repo's
@@ -177,22 +177,6 @@ which stays the deployed source of truth.
   If the defaults in either file are ever changed, the other must be updated
   by hand (see the changeSet comment in that file and the "Source of truth"
   section above).
-- **`docker build .` of this repo produces an image whose static route table
-  never loads (fix open, PR #16, not yet merged as of this writing).** The
-  `Dockerfile` sets `SPRING_CONFIG_ADDITIONAL_LOCATION` (a config *search
-  directory*) but never `SPRING_PROFILES_ACTIVE`, and `application-pki.yml` is
-  a profile-specific document (`application-{profile}.yml` naming) that Spring
-  Boot only reads when profile `pki` is active — which nothing currently
-  activates. The built image falls back to the base image's packaged
-  `api-default` route instead of the casdoor/headscale routes above.
-  **This is not a live incident**: the cluster deployment does not use this
-  repo's built image — it renders the shared `hugmesh-gateway` Helm chart
-  directly (see [Source of truth](#source-of-truth)), and that chart already
-  sets `SPRING_PROFILES_ACTIVE`. It only means this repo's own `docker build`
-  output misroutes if run/deployed standalone. Same bug class as the
-  fleet-wide `SPRING_CONFIG_ADDITIONAL_LOCATION`-without-`SPRING_PROFILES_ACTIVE`
-  gap already fixed for the local-compose stack and the Helm chart
-  (`generator#261` / `generator#275`).
 
 ## CI
 
@@ -211,7 +195,7 @@ gateway behavior — the security filter chain, RBAC, the issuer-keyed
 domain-scoping converter, the `bff_`→JWT exchange filter, and the route-access /
 resource-access filters (including the `GAME-MASTER`/`ADMIN` own-domain bypass
 and the reserved-prefix guard) — is unit- and e2e-tested in
-[hugmesh-gateway](https://github.com/HugMesh/hugmesh-gateway).
+[hugmesh-gateway](https://github.com/Snapdragon-Systems/hugmesh-gateway).
 What this repo contributes is the route config (`application-pki.yml`) and the
 `gateway_routes` seed; the meaningful check here is that they stay in sync with
 the deployed generator Application (see [Source of truth](#source-of-truth)). An
@@ -265,6 +249,13 @@ when those ship.
   so the static config binds routes under Boot 4 / SCG 5 (matches the sibling
   be-/fe-/hugmesh-gateway configs). The deployed Postgres `gateway_routes`
   path already worked; this fixes the image's baked static config too.
+- ✅ **`docker build .` profile activation.** The `Dockerfile` now sets
+  `SPRING_PROFILES_ACTIVE=pki` in addition to `SPRING_CONFIG_ADDITIONAL_LOCATION`,
+  so `application-pki.yml` (a profile-specific `application-{profile}.yml`
+  document) actually loads and the built image carries the casdoor/headscale
+  routes instead of falling back to the base image's packaged `api-default`
+  route. Same bug class as the fleet-wide gap already fixed for the
+  local-compose stack and the Helm chart (`generator#261` / `generator#275`).
 - 🚧 **SSO end-to-end + e2e.** The Casdoor OIDC → user-bff custody-JWT →
   opaque `bff_` session flow (with the gateway's `bff_`→JWT exchange filter) is
   being brought up live end-to-end and covered by e2e. The gateway behavior is
