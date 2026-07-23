@@ -26,7 +26,7 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 | | |
 |---|---|
 | **Tier** | identity / PKI |
-| **Namespace** | `hugmesh-pki` (downstreams resolve at `*.hugmesh-pki.svc.cluster.local`) |
+| **Namespace** | `snapdragon-pki` (downstreams resolve at `*.snapdragon-pki.svc.cluster.local`) |
 | **`SPRING_APPLICATION_NAME`** | `hugmesh-pki-gateway` (set in the `Dockerfile`; selects this instance's route-access rows) |
 | **Listen port** | `8080` (the gateway itself, `EXPOSE`d in the `Dockerfile`); downstreams are Casdoor `:8000` and headscale `:8080` |
 | **Ingress** | `nginx-internal` — cluster-internal only, never internet-facing |
@@ -36,7 +36,7 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 
 The route table is config-driven (`application-pki.yml`, mirrored into the
 `gateway_routes` Liquibase seed). All four routes are identity-tier
-downstreams in the `hugmesh-pki` namespace:
+downstreams in the `snapdragon-pki` namespace:
 
 ```mermaid
 flowchart LR
@@ -44,7 +44,7 @@ flowchart LR
     gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
     gw -->|Path=/login/**| casdoor
     gw -->|Path=/.well-known/**| casdoor
-    gw -->|Host=scale.hugmesh.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
+    gw -->|Host=scale.snapdragon.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
     beGw["hugmesh-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
     feGw["hugmesh-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
 ```
@@ -59,7 +59,7 @@ below) — they do not send traffic through this gateway itself.*
 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
 | `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
 | `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
-| `headscale` | `Host=scale.hugmesh.systems` | headscale `:8080` | tailnet / VPN control plane |
+| `headscale` | `Host=scale.snapdragon.systems` | headscale `:8080` | tailnet / VPN control plane |
 
 `CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are env-overridable
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
