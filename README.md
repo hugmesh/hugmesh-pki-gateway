@@ -240,9 +240,11 @@ in the shared gateway repo.
 
 State legend: ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR, not merged) ·
 🔭 planned (design only). Everything documented above is ✅ shipped. The remaining
-items below are **not** yet enforced by this overlay — they land via the shared
-`hugmesh-gateway` image and admin-bff changelogs, and this repo inherits them
-when those ship.
+items below are **not** yet enforced by this overlay — either because they have
+not landed yet (🚧 / 🔭, arriving via the shared `hugmesh-gateway` image and
+admin-bff changelogs, which this repo inherits when those ship), or because they
+**have** landed upstream and are inherited here but **ship dark behind a
+default-off flag** (marked ✅, with the flag named in the bullet).
 
 - ✅ **SCG-5 static-route prefix rename.** `application-pki.yml` migrated from
   `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`
@@ -260,13 +262,34 @@ when those ship.
   opaque `bff_` session flow (with the gateway's `bff_`→JWT exchange filter) is
   being brought up live end-to-end and covered by e2e. The gateway behavior is
   in the shared image; this overlay inherits it.
-- 🔭 **MFA / step-up on identity-tier routes.** Casdoor MFA is design-complete
-  (WebAuthn + TOTP + recovery; per-role defaults; admin-bff Liquibase 150-band).
-  Enforcement is via a planned, fail-closed `gateway_route_access.mfa_required`
-  column plus an `amr`/`acr` → `MFA_SATISFIED` authority. Because this gateway
-  consumes `gateway_route_access` rows from the shared image, identity-tier
-  routes will gain MFA / step-up enforcement once the 150-band changelog and
-  shared-image support land. MFA is **not** enforced today.
+- ✅ **MFA-required route enforcement — shipped upstream, ships dark.** The
+  enforcement machinery has landed and this overlay already inherits it; it is
+  **feature-flagged off**, not absent. `gateway_route_access` carries a
+  fail-closed `mfa_required` column (added by admin-bff Liquibase
+  `001-gateway-route-access.xml`, `NOT NULL DEFAULT false`, so every existing row
+  is `false`), and a deciding grant on a row with `mfa_required=true`
+  additionally demands the `MFA_SATISFIED` marker — absent marker means
+  **denied**. The D8 privileged-MFA floor sits *above* the `SUPERADMIN`
+  cross-domain bypass, so even a `SUPERADMIN` reaching an `mfa_required` surface
+  without a fresh second factor is denied.
+
+  `MFA_SATISFIED` is **not** a role and **not** a permission: it is a non-role
+  marker derived solely from the **BFF-written, freshness-validated
+  `mfa_satisfied_at` JWT-Custom claim** (epoch-millis as a string, stamped by the
+  BFF on a successful MFA challenge). A stamp is fresh iff
+  `0 <= now - ts <= app.mfa.freshness-window` (default `600000`, 10 minutes); a
+  **future** timestamp is rejected as clock-skew/forged-future. A forged
+  `permissions:["MFA_SATISFIED"]` is dropped by the reserved-authority-prefix
+  guard, and the missing `ROLE_` prefix means the marker can never accidentally
+  satisfy a role check.
+
+  **MFA is still not enforced on identity-tier routes today**, because both
+  `app.mfa.enabled` and `app.mfa.enforce-privileged-floor` default `false` — when
+  off, the `mfa_required` column is inert. What remains is the platform-wide half:
+  MFA enrollment / step-up (WebAuthn + TOTP + recovery, per-role defaults; the
+  admin-bff `150`–`152` substrate/factors/WebAuthn changelogs are merged), the
+  admin-bff-managed `mfa_required` rows for the identity-tier routes, and flipping
+  the two flags. Nothing in this overlay changes either way.
 - ✅ **Continuous-OWASP security CI stage — DECIDED: this overlay is EXEMPT.**
   The platform pen-test standard adds a shared `.gitlab-ci.yml` `include`
   (ZAP DAST + Dependency-Check SCA + nuclei + k6) to app/service repos.
