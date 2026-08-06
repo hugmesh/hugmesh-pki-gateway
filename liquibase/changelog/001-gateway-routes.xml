@@ -16,23 +16,23 @@
   <changeSet id="seed-pki-routes" author="hugmesh">
     <insert tableName="gateway_routes">
       <column name="route_id" value="casdoor-auth"/>
-      <column name="uri" value="http://casdoor.snapdragon-pki.svc.cluster.local:8000"/>
+      <column name="uri" value="http://casdoor.hugmesh-pki.svc.cluster.local:8000"/>
       <column name="predicates" value="Path=/api/auth/**"/>
     </insert>
     <insert tableName="gateway_routes">
       <column name="route_id" value="casdoor-login"/>
-      <column name="uri" value="http://casdoor.snapdragon-pki.svc.cluster.local:8000"/>
+      <column name="uri" value="http://casdoor.hugmesh-pki.svc.cluster.local:8000"/>
       <column name="predicates" value="Path=/login/**"/>
     </insert>
     <insert tableName="gateway_routes">
       <column name="route_id" value="casdoor-oidc"/>
-      <column name="uri" value="http://casdoor.snapdragon-pki.svc.cluster.local:8000"/>
+      <column name="uri" value="http://casdoor.hugmesh-pki.svc.cluster.local:8000"/>
       <column name="predicates" value="Path=/.well-known/**"/>
     </insert>
     <insert tableName="gateway_routes">
       <column name="route_id" value="headscale"/>
-      <column name="uri" value="http://headscale.snapdragon-pki.svc.cluster.local:8080"/>
-      <column name="predicates" value="Host=scale.snapdragon.systems"/>
+      <column name="uri" value="http://headscale.hugmesh-pki.svc.cluster.local:8080"/>
+      <column name="predicates" value="Host=scale.hugmesh.systems"/>
     </insert>
   </changeSet>
 </databaseChangeLog>

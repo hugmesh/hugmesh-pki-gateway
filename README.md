@@ -26,7 +26,7 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 | | |
 |---|---|
 | **Tier** | identity / PKI |
-| **Namespace** | `snapdragon-pki` (downstreams resolve at `*.snapdragon-pki.svc.cluster.local`) |
+| **Namespace** | `hugmesh-pki` (downstreams resolve at `*.hugmesh-pki.svc.cluster.local`) |
 | **`SPRING_APPLICATION_NAME`** | `hugmesh-pki-gateway` (set in the `Dockerfile`; selects this instance's route-access rows) |
 | **Listen port** | `8080` (the gateway itself, `EXPOSE`d in the `Dockerfile`); downstreams are Casdoor `:8000` and headscale `:8080` |
 | **Ingress** | `nginx-internal` — cluster-internal only, never internet-facing |
@@ -35,8 +35,9 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 ## What it routes
 
 The route table is config-driven (`application-pki.yml`, mirrored into the
-`gateway_routes` Liquibase seed). All four routes are identity-tier
-downstreams in the `snapdragon-pki` namespace:
+`gateway_routes` Liquibase seed). All four routes **this repo configures** are
+identity-tier downstreams in the `hugmesh-pki` namespace (the actual deployed
+table has two more — see the callout below):
 
 ```mermaid
 flowchart LR
@@ -44,7 +45,7 @@ flowchart LR
     gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
     gw -->|Path=/login/**| casdoor
     gw -->|Path=/.well-known/**| casdoor
-    gw -->|Host=scale.snapdragon.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
+    gw -->|Host=scale.hugmesh.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
     beGw["hugmesh-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
     feGw["hugmesh-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
 ```
@@ -59,11 +60,48 @@ below) — they do not send traffic through this gateway itself.*
 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
 | `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
 | `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
-| `headscale` | `Host=scale.snapdragon.systems` | headscale `:8080` | tailnet / VPN control plane |
+| `headscale` | `Host=scale.hugmesh.systems` | headscale `:8080` | tailnet / VPN control plane |
 
 `CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are env-overridable
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
 issuer the OAuth2 resource server validates JWTs against.
+
+> **The deployed route table has two routes this local-dev mirror does not
+> (KNOWN GAP).** The generator's ArgoCD Application
+> ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml))
+> inserts two additional routes *ahead of* `casdoor-auth`/`casdoor-login`:
+> `signup-gate-signup` (`Path=/api/signup`) and `signup-gate-login`
+> (`Path=/api/login`), both proxied to the `signup-gate` service instead of
+> straight to Casdoor. `signup-gate` sits in front of the paths that *mint* a
+> username (native self-signup and OAuth-provider signup-completion) and calls
+> the federation availability endpoint to reject a confusable/look-alike name
+> before Casdoor creates the login — Casdoor's own forbidden-list is
+> exact-match only. Neither `application-pki.yml` nor the Liquibase seed in
+> this repo models `signup-gate`, so a deployment built from **only** this
+> repo's local-dev mirror routes `/api/signup` and `/api/login` straight to
+> Casdoor and **bypasses the confusable-username gate entirely**. See "Known
+> Gaps / TODO" below.
+
+> **`hugmesh-pki` / `scale.hugmesh.systems` is correct, not stale (2026-08-05
+> correction).** A prior pass (#20) reverted these two identifiers back to
+> `snapdragon-pki` / `scale.snapdragon.systems`, reasoning that headscale's
+> "real tailnet hostname" and the "actual k8s namespace" were still
+> unrenamed. That premise is now disproven by every other current source in
+> the platform: both direct siblings ([hugmesh-be-gateway](https://github.com/Snapdragon-Systems/hugmesh-be-gateway)
+> and [hugmesh-fe-gateway](https://github.com/Snapdragon-Systems/hugmesh-fe-gateway))
+> run on `hugmesh-backend` / `hugmesh-frontend`; the generator's own ArgoCD
+> Application ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml) —
+> this README's own cited "deployed source of truth") targets
+> `destination.namespace: hugmesh-pki` and `host: scale.hugmesh.systems`; and
+> headscale's own shipped config
+> (`keys-template/headscale/config.yaml` in hugmesh-generator) sets
+> `server_url: https://scale.hugmesh.systems`, with Casdoor's OIDC client
+> registration (`specs/cluster/manifests/casdoor/init-job.yaml`) issuing the
+> matching `https://scale.hugmesh.systems/oidc/callback` redirect URI. The
+> generator's own rebrand (`generator#437`) merged 23 minutes *before* #20, so
+> the "still snapdragon" premise was already stale the moment #20 was written.
+> Keep this repo's namespace/hostname literals in sync with the generator
+> Application above, not with `snapdragon-*`.
 
 > **SCG-5 route-prefix note (DONE).** Spring Cloud Gateway 5.0 (the
 > Spring Boot 4 baseline this fleet now runs) moved static route config from
@@ -167,6 +205,21 @@ which stays the deployed source of truth.
 
 ## Known Gaps / TODO
 
+- **This repo's route table is missing the deployed `signup-gate` routes.**
+  The generator's ArgoCD Application
+  ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml)) —
+  the same file this README calls the deployed source of truth for the route
+  table — renders **six** routes, not the four in `application-pki.yml` /
+  the Liquibase seed: it puts `signup-gate-signup` (`/api/signup`) and
+  `signup-gate-login` (`/api/login`) ahead of the `casdoor-*` routes, proxying
+  through the pre-signup confusable/uniqueness gate (see the note under
+  ["What it routes"](#what-it-routes)). Neither this repo's YAML nor its
+  Liquibase seed models `signup-gate`, so they are not just missing a literal
+  value here — they are missing two whole routes, and a gateway stood up from
+  only this repo's local-dev mirror would let signup/login traffic bypass the
+  confusable-name gate. Fixing this needs a `SIGNUP_GATE_URI` env-overridable
+  default plus two more route entries/seed rows, mirroring the generator
+  Application's ordering (signup-gate routes **before** `casdoor-auth`).
 - **Liquibase seed rows can silently drift from `application-pki.yml`.** The
   `gateway_routes` insert statements in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
