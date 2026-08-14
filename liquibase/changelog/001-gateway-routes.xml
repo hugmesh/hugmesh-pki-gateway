@@ -32,7 +32,7 @@
     <insert tableName="gateway_routes">
       <column name="route_id" value="headscale"/>
       <column name="uri" value="http://headscale.hugmesh-pki.svc.cluster.local:8080"/>
-      <column name="predicates" value="Host=scale.hugmesh.systems"/>
+      <column name="predicates" value="Host=scale.hugmesh.net"/>
     </insert>
   </changeSet>
 </databaseChangeLog>

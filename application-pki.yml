@@ -32,4 +32,4 @@ spring:
             - id: headscale
               uri: ${HEADSCALE_URI:http://headscale.hugmesh-pki.svc.cluster.local:8080}
               predicates:
-                - Host=scale.hugmesh.systems
+                - Host=scale.hugmesh.net

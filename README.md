@@ -7,9 +7,9 @@ never internet-facing, and it validates the internal Casdoor JWT — no external
 login is exposed.
 
 It is **the same image and code as
-[hugmesh-gateway](https://github.com/Snapdragon-Systems/hugmesh-gateway)**.
-Like its [be-](https://github.com/Snapdragon-Systems/hugmesh-be-gateway) and
-[fe-gateway](https://github.com/Snapdragon-Systems/hugmesh-fe-gateway)
+[hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway)**.
+Like its [be-](https://github.com/hugmesh/hugmesh-be-gateway) and
+[fe-gateway](https://github.com/hugmesh/hugmesh-fe-gateway)
 siblings this repo is a **thin overlay**: only the `SPRING_APPLICATION_NAME`, the
 Postgres-backed route set (Liquibase), and the downstream URIs differ. The image
 builds `FROM` the shared gateway image so every device runs identical, audited
@@ -45,7 +45,7 @@ flowchart LR
     gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
     gw -->|Path=/login/**| casdoor
     gw -->|Path=/.well-known/**| casdoor
-    gw -->|Host=scale.hugmesh.systems| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
+    gw -->|Host=scale.hugmesh.net| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
     beGw["hugmesh-be-gateway<br/>(API + matrix + mastodon tier)"] -.->|validates JWTs minted by| casdoor
     feGw["hugmesh-fe-gateway<br/>(host + remotes tier)"] -.->|validates JWTs minted by| casdoor
 ```
@@ -60,7 +60,7 @@ below) — they do not send traffic through this gateway itself.*
 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
 | `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
 | `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
-| `headscale` | `Host=scale.hugmesh.systems` | headscale `:8080` | tailnet / VPN control plane |
+| `headscale` | `Host=scale.hugmesh.net` | headscale `:8080` | tailnet / VPN control plane |
 
 `CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are env-overridable
 (defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
@@ -68,7 +68,7 @@ issuer the OAuth2 resource server validates JWTs against.
 
 > **The deployed route table has two routes this local-dev mirror does not
 > (KNOWN GAP).** The generator's ArgoCD Application
-> ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml))
+> ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml))
 > inserts two additional routes *ahead of* `casdoor-auth`/`casdoor-login`:
 > `signup-gate-signup` (`Path=/api/signup`) and `signup-gate-login`
 > (`Path=/api/login`), both proxied to the `signup-gate` service instead of
@@ -82,22 +82,22 @@ issuer the OAuth2 resource server validates JWTs against.
 > Casdoor and **bypasses the confusable-username gate entirely**. See "Known
 > Gaps / TODO" below.
 
-> **`hugmesh-pki` / `scale.hugmesh.systems` is correct, not stale (2026-08-05
+> **`hugmesh-pki` / `scale.hugmesh.net` is correct, not stale (2026-08-05
 > correction).** A prior pass (#20) reverted these two identifiers back to
-> `snapdragon-pki` / `scale.snapdragon.systems`, reasoning that headscale's
+> `snapdragon-pki` / the pre-rebrand snapdragon `scale` host, reasoning that headscale's
 > "real tailnet hostname" and the "actual k8s namespace" were still
 > unrenamed. That premise is now disproven by every other current source in
-> the platform: both direct siblings ([hugmesh-be-gateway](https://github.com/Snapdragon-Systems/hugmesh-be-gateway)
-> and [hugmesh-fe-gateway](https://github.com/Snapdragon-Systems/hugmesh-fe-gateway))
+> the platform: both direct siblings ([hugmesh-be-gateway](https://github.com/hugmesh/hugmesh-be-gateway)
+> and [hugmesh-fe-gateway](https://github.com/hugmesh/hugmesh-fe-gateway))
 > run on `hugmesh-backend` / `hugmesh-frontend`; the generator's own ArgoCD
-> Application ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml) —
+> Application ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml) —
 > this README's own cited "deployed source of truth") targets
-> `destination.namespace: hugmesh-pki` and `host: scale.hugmesh.systems`; and
+> `destination.namespace: hugmesh-pki` and `host: scale.hugmesh.net`; and
 > headscale's own shipped config
 > (`keys-template/headscale/config.yaml` in hugmesh-generator) sets
-> `server_url: https://scale.hugmesh.systems`, with Casdoor's OIDC client
+> `server_url: https://scale.hugmesh.net`, with Casdoor's OIDC client
 > registration (`specs/cluster/manifests/casdoor/init-job.yaml`) issuing the
-> matching `https://scale.hugmesh.systems/oidc/callback` redirect URI. The
+> matching `https://scale.hugmesh.net/oidc/callback` redirect URI. The
 > generator's own rebrand (`generator#437`) merged 23 minutes *before* #20, so
 > the "still snapdragon" premise was already stale the moment #20 was written.
 > Keep this repo's namespace/hostname literals in sync with the generator
@@ -195,7 +195,7 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
 
 The route table and per-instance config that actually run in the cluster come
 from the generator's ArgoCD Application
-[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
+[`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml),
 which renders the shared `hugmesh-gateway` Helm chart with `instance.name:
 hugmesh-pki-gateway` and the pki `routes`. The admin-bff
 (`hugmesh-admin-bff-api`) CRUDs the `gateway_route_access` rows. This repo's
@@ -207,7 +207,7 @@ which stays the deployed source of truth.
 
 - **This repo's route table is missing the deployed `signup-gate` routes.**
   The generator's ArgoCD Application
-  ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/Snapdragon-Systems/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml)) —
+  ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml)) —
   the same file this README calls the deployed source of truth for the route
   table — renders **six** routes, not the four in `application-pki.yml` /
   the Liquibase seed: it puts `signup-gate-signup` (`/api/signup`) and
@@ -248,7 +248,7 @@ gateway behavior — the security filter chain, RBAC, the issuer-keyed
 domain-scoping converter, the `bff_`→JWT exchange filter, and the route-access /
 resource-access filters (including the `GAME-MASTER`/`ADMIN` own-domain bypass
 and the reserved-prefix guard) — is unit- and e2e-tested in
-[hugmesh-gateway](https://github.com/Snapdragon-Systems/hugmesh-gateway).
+[hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway).
 What this repo contributes is the route config (`application-pki.yml`) and the
 `gateway_routes` seed; the meaningful check here is that they stay in sync with
 the deployed generator Application (see [Source of truth](#source-of-truth)). An
