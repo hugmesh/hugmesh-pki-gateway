@@ -84,7 +84,7 @@ issuer the OAuth2 resource server validates JWTs against.
 
 > **`hugmesh-pki` / `scale.hugmesh.net` is correct, not stale (2026-08-05
 > correction).** A prior pass (#20) reverted these two identifiers back to
-> `snapdragon-pki` / the pre-rebrand snapdragon `scale` host, reasoning that headscale's
+> their pre-rebrand spellings, reasoning that headscale's
 > "real tailnet hostname" and the "actual k8s namespace" were still
 > unrenamed. That premise is now disproven by every other current source in
 > the platform: both direct siblings ([hugmesh-be-gateway](https://github.com/hugmesh/hugmesh-be-gateway)
@@ -99,9 +99,9 @@ issuer the OAuth2 resource server validates JWTs against.
 > registration (`specs/cluster/manifests/casdoor/init-job.yaml`) issuing the
 > matching `https://scale.hugmesh.net/oidc/callback` redirect URI. The
 > generator's own rebrand (`generator#437`) merged 23 minutes *before* #20, so
-> the "still snapdragon" premise was already stale the moment #20 was written.
+> the "still un-renamed" premise was already stale the moment #20 was written.
 > Keep this repo's namespace/hostname literals in sync with the generator
-> Application above, not with `snapdragon-*`.
+> Application above — never revert them to pre-rebrand spellings.
 
 > **SCG-5 route-prefix note (DONE).** Spring Cloud Gateway 5.0 (the
 > Spring Boot 4 baseline this fleet now runs) moved static route config from
