@@ -220,24 +220,40 @@ which stays the deployed source of truth.
   confusable-name gate. Fixing this needs a `SIGNUP_GATE_URI` env-overridable
   default plus two more route entries/seed rows, mirroring the generator
   Application's ordering (signup-gate routes **before** `casdoor-auth`).
-- **Liquibase seed rows can silently drift from `application-pki.yml`.** The
-  `gateway_routes` insert statements in
+- **Liquibase seed rows still cannot see an env override — but they can no
+  longer drift *silently*.** The `gateway_routes` insert statements in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
   hardcode the Casdoor/headscale URIs as plain literals — Liquibase XML does
   not support Spring's `${VAR:default}` relaxed-binding syntax used in
   `application-pki.yml` — so a `CASDOOR_URI` or `HEADSCALE_URI` env override
-  applied at deploy time will **not** propagate to these seeded fallback rows.
-  If the defaults in either file are ever changed, the other must be updated
-  by hand (see the changeSet comment in that file and the "Source of truth"
-  section above).
+  applied at deploy time still does **not** propagate to these seeded fallback
+  rows. That half is unchanged, and templating the seed (envsubst before
+  Liquibase runs) remains the only route to a single source of truth. What is
+  fixed is the silence: the two files' **defaults** are now compared by
+  [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py) in
+  the pipeline's `check` stage (see [CI](#ci)), so changing one and forgetting
+  the other fails the build instead of shipping. Keeping them in step is still
+  a manual edit — see the changeSet comment in that file and the "Source of
+  truth" section above.
 
 ## CI
 
-The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml): a single `build` stage
-that bases off the sibling `hugmesh-gateway` image (`GATEWAY_IMAGE`
-build-arg) and pushes this overlay to the in-cluster GitLab registry on the
-privileged `hugmesh-x86` runner, only on the default branch or a tag. No keys
-are baked in. **CI is GitLab-only** — there are intentionally no GitHub Actions
+The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml), on the privileged
+`hugmesh-x86` runner:
+
+- **`check`** — `check:route-seed-drift` runs
+  [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py),
+  which resolves each `${VAR:default}` in `application-pki.yml` down to its
+  default and compares route id, uri and predicates — in order — against the
+  effective `gateway_routes` rows the Liquibase changelogs seed, failing the
+  build on any disagreement. Runs on the default branch, a tag, and merge
+  requests. The script is stdlib-only Python (no PyYAML), so the job needs
+  nothing but a bare `python` image, and it mounts the checkout read-only.
+- **`build`** — `build:image` bases off the sibling `hugmesh-gateway` image
+  (`GATEWAY_IMAGE` build-arg) and pushes this overlay to the in-cluster GitLab
+  registry, only on the default branch or a tag. No keys are baked in.
+
+**CI is GitLab-only** — there are intentionally no GitHub Actions
 (`.github/workflows/`) in this repo, in line with the platform's CI = GitLab
 ONLY standard.
 
@@ -251,7 +267,12 @@ and the reserved-prefix guard) — is unit- and e2e-tested in
 [hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway).
 What this repo contributes is the route config (`application-pki.yml`) and the
 `gateway_routes` seed; the meaningful check here is that they stay in sync with
-the deployed generator Application (see [Source of truth](#source-of-truth)). An
+the deployed generator Application (see [Source of truth](#source-of-truth)).
+The half of that which is verifiable from inside this repo — the route config
+and the seed agreeing with **each other** — is enforced by
+[`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py) in the
+pipeline's `check` stage (see [CI](#ci)); agreement with the generator
+Application itself is still checked by eye. An
 earlier branch carried Java source and a Playwright/Gherkin e2e suite; those
 were removed when the repo was refactored into a pure thin overlay and now live
 in the shared gateway repo.

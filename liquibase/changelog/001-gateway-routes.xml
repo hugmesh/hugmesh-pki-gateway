@@ -10,7 +10,9 @@
     overridden via env var for a given environment, these seeded fallback
     rows will NOT pick up the override and can drift from the live YAML
     config. Keep these literals in sync with application-pki.yml's defaults
-    by hand; see README.md "Source of truth" section for the authoritative
+    by hand; ../../scripts/check-route-seed-drift.py compares the two in CI
+    and fails the build when they diverge, but it cannot edit either file for
+    you. See README.md "Source of truth" section for the authoritative
     config location.
   -->
   <changeSet id="seed-pki-routes" author="hugmesh">

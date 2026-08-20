@@ -8,9 +8,31 @@
 # repo carries only config (no dependency manifest, no app code), and the shared
 # hugmesh-gateway image it overlays runs the full pentest stage in its own
 # repo. If this repo ever gains its own app surface, adopt the include.
-stages: [build]
+stages: [check, build]
+
+# Guard on the one piece of drift risk that is genuinely local to this
+# config-only overlay: application-pki.yml's route defaults and the
+# gateway_routes Liquibase seed are two hand-maintained mirrors of the same
+# route table, and Liquibase XML has no ${VAR:default} syntax to share with
+# Spring, so nothing but this job stops the two from diverging unnoticed.
+#
+# The x86 runner is a shell executor with docker and carries no python, so the
+# check runs inside a bare python image — the same wrapping hugmesh-gateway's
+# `test` job uses for its JDK. The script is stdlib-only, so the image needs no
+# install step; the bind mount is READ-ONLY and the script writes nothing, so
+# this job cannot leave root-owned files behind in the build directory.
+check:route-seed-drift:
+  stage: check
+  tags: [hugmesh-x86, privileged]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - docker run --rm -v "${CI_PROJECT_DIR}:/workspace:ro" -w /workspace python:3-alpine python3 scripts/check-route-seed-drift.py
 
 build:image:
+  needs: [check:route-seed-drift]
   stage: build
   tags: [hugmesh-x86, privileged]
   rules:
