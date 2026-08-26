@@ -17,6 +17,14 @@ spring:
       server:
         webflux:
           routes:
+            - id: signup-gate-signup
+              uri: ${SIGNUP_GATE_URI:http://signup-gate.hugmesh-pki.svc.cluster.local:8000}
+              predicates:
+                - Path=/api/signup
+            - id: signup-gate-login
+              uri: ${SIGNUP_GATE_URI:http://signup-gate.hugmesh-pki.svc.cluster.local:8000}
+              predicates:
+                - Path=/api/login
             - id: casdoor-auth
               uri: ${CASDOOR_URI:http://casdoor.hugmesh-pki.svc.cluster.local:8000}
               predicates:
