@@ -15,6 +15,18 @@
     you. See README.md "Source of truth" section for the authoritative
     config location.
   -->
+  <changeSet id="seed-pki-signup-gate-routes" author="hugmesh">
+    <insert tableName="gateway_routes">
+      <column name="route_id" value="signup-gate-signup"/>
+      <column name="uri" value="http://signup-gate.hugmesh-pki.svc.cluster.local:8000"/>
+      <column name="predicates" value="Path=/api/signup"/>
+    </insert>
+    <insert tableName="gateway_routes">
+      <column name="route_id" value="signup-gate-login"/>
+      <column name="uri" value="http://signup-gate.hugmesh-pki.svc.cluster.local:8000"/>
+      <column name="predicates" value="Path=/api/login"/>
+    </insert>
+  </changeSet>
   <changeSet id="seed-pki-routes" author="hugmesh">
     <insert tableName="gateway_routes">
       <column name="route_id" value="casdoor-auth"/>
