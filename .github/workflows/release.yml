@@ -12,14 +12,14 @@ on:
           Sibling hugmesh-gateway base image (GATEWAY_IMAGE build-arg) this
           overlay builds FROM.
         required: false
-        default: ghcr.io/hugmesh-net/hugmesh-gateway:main
+        default: ghcr.io/hugmesh/hugmesh-gateway:main
       tag:
         description: Tag to publish the built image under.
         required: false
         default: latest
 
 env:
-  IMAGE_NAME: ghcr.io/hugmesh-net/hugmesh-pki-gateway
+  IMAGE_NAME: ghcr.io/hugmesh/hugmesh-pki-gateway
 
 jobs:
   build-and-push:
