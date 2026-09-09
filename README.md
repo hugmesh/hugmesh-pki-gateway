@@ -35,14 +35,18 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 ## What it routes
 
 The route table is config-driven (`application-pki.yml`, mirrored into the
-`gateway_routes` Liquibase seed). All four routes **this repo configures** are
-identity-tier downstreams in the `hugmesh-pki` namespace (the actual deployed
-table has two more — see the callout below):
+`gateway_routes` Liquibase seed). All six routes are identity-tier downstreams
+in the `hugmesh-pki` namespace, and they match the deployed generator
+Application one-for-one **in order** — route order decides which predicate wins
+a request, so the two `signup-gate` routes come first:
 
 ```mermaid
 flowchart LR
     ingress["nginx-internal ingress<br/>(cluster-internal only)"] --> gw["hugmesh-pki-gateway<br/>(shared gateway image +<br/>this repo's route config/seed)"]
-    gw -->|Path=/api/auth/**| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
+    gw -->|"Path=/api/signup (route 1)"| sg["signup-gate :8000<br/>(pre-signup confusable /<br/>uniqueness gate)"]
+    gw -->|"Path=/api/login (route 2)"| sg
+    sg -->|"forwards on once the name passes"| casdoor["Casdoor :8000<br/>(OIDC IdP — auth, login, JWKS)"]
+    gw -->|Path=/api/auth/**| casdoor
     gw -->|Path=/login/**| casdoor
     gw -->|Path=/.well-known/**| casdoor
     gw -->|Host=scale.hugmesh.net| headscale["headscale :8080<br/>(tailnet / VPN control plane)"]
@@ -55,32 +59,39 @@ the sibling gateways depend on the Casdoor this gateway fronts (they validate
 JWTs it mints, per [How it relates](#how-it-relates-to-the-gateways--casdoor--federation--multi-tenancy)
 below) — they do not send traffic through this gateway itself.*
 
-| Route id | Predicate | Downstream | Purpose |
-|----------|-----------|------------|---------|
-| `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
-| `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
-| `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
-| `headscale` | `Host=scale.hugmesh.net` | headscale `:8080` | tailnet / VPN control plane |
+| # | Route id | Predicate | Downstream | Purpose |
+|---|----------|-----------|------------|---------|
+| 1 | `signup-gate-signup` | `Path=/api/signup` | `signup-gate` `:8000` | native self-signup — confusable/uniqueness gate |
+| 2 | `signup-gate-login` | `Path=/api/login` | `signup-gate` `:8000` | OAuth signup-completion (same proxy; transparent for non-signup logins) |
+| 3 | `casdoor-auth` | `Path=/api/auth/**` | Casdoor `:8000` | OAuth2 / token endpoints |
+| 4 | `casdoor-login` | `Path=/login/**` | Casdoor `:8000` | hosted login UI |
+| 5 | `casdoor-oidc` | `Path=/.well-known/**` | Casdoor `:8000` | OIDC discovery / JWKS |
+| 6 | `headscale` | `Host=scale.hugmesh.net` | headscale `:8080` | tailnet / VPN control plane |
 
-`CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are env-overridable
-(defaults point at the in-namespace services). `CASDOOR_ISSUER_URI` is the
-issuer the OAuth2 resource server validates JWTs against.
+`SIGNUP_GATE_URI`, `CASDOOR_URI`, `CASDOOR_ISSUER_URI`, and `HEADSCALE_URI` are
+env-overridable (defaults point at the in-namespace services).
+`CASDOOR_ISSUER_URI` is the issuer the OAuth2 resource server validates JWTs
+against. Both `signup-gate-*` routes share the single `SIGNUP_GATE_URI`, so an
+override moves the pair together and cannot half-bypass the gate.
 
-> **The deployed route table has two routes this local-dev mirror does not
-> (KNOWN GAP).** The generator's ArgoCD Application
-> ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml))
-> inserts two additional routes *ahead of* `casdoor-auth`/`casdoor-login`:
-> `signup-gate-signup` (`Path=/api/signup`) and `signup-gate-login`
-> (`Path=/api/login`), both proxied to the `signup-gate` service instead of
-> straight to Casdoor. `signup-gate` sits in front of the paths that *mint* a
-> username (native self-signup and OAuth-provider signup-completion) and calls
-> the federation availability endpoint to reject a confusable/look-alike name
-> before Casdoor creates the login — Casdoor's own forbidden-list is
-> exact-match only. Neither `application-pki.yml` nor the Liquibase seed in
-> this repo models `signup-gate`, so a deployment built from **only** this
-> repo's local-dev mirror routes `/api/signup` and `/api/login` straight to
-> Casdoor and **bypasses the confusable-username gate entirely**. See "Known
-> Gaps / TODO" below.
+> **Why the two `signup-gate` routes come first (and why they are modelled
+> here at all).** `/api/signup` and `/api/login` are the paths that *mint* a
+> username — native self-signup and OAuth-provider signup-completion — so they
+> are proxied to the `signup-gate` service rather than straight to Casdoor.
+> `signup-gate` calls the federation availability endpoint and rejects a
+> confusable/look-alike name before Casdoor creates the login; Casdoor's own
+> forbidden-list is exact-match only, which is why this proxy is the
+> confusable-enforcement seam. The proxy forwards everything else on to
+> `casdoor:8000` transparently, including a non-signup `/api/login`.
+> **Ordering is load-bearing:** these two must stay ahead of the `casdoor-*`
+> routes in both `application-pki.yml` and the Liquibase seed, or `/api/signup`
+> and `/api/login` reach Casdoor directly and the confusable gate is bypassed.
+> This used to be a known gap — the local-dev mirror carried only the four
+> `casdoor-*`/`headscale` routes while the deployed generator Application
+> rendered six. It is closed: both files now model `signup-gate`, and
+> [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py)
+> fails CI on any id/uri/predicate **or order** disagreement between them
+> (agreement with the generator Application itself is still checked by eye).
 
 > **`hugmesh-pki` / `scale.hugmesh.net` is correct, not stale (2026-08-05
 > correction).** A prior pass (#20) reverted these two identifiers back to
@@ -131,6 +142,7 @@ seed** for this tier (so it is never silently fail-open):
 | `/api/auth/**` | `ROLE_USER` |
 | `/login/**` | `PUBLIC` (anonymous-allowed) |
 | `/.well-known/**` | `PUBLIC` (anonymous-allowed) |
+| `/**` | `ROLE_SUPERADMIN` (the headscale control-plane floor — the `headscale` route is `Host`-matched with no `Path`, so longest-pattern matching leaves the three rows above intact and floors everything else) |
 
 Login and OIDC discovery are deliberately `PUBLIC` so an unauthenticated visitor
 can reach the login page and a client can fetch JWKS; the token surface floors
@@ -205,29 +217,37 @@ which stays the deployed source of truth.
 
 ## Known Gaps / TODO
 
-- **This repo's route table is missing the deployed `signup-gate` routes.**
-  The generator's ArgoCD Application
-  ([`specs/cluster/apps/20-gateway-pki.yaml`](https://github.com/hugmesh/hugmesh-generator/blob/main/specs/cluster/apps/20-gateway-pki.yaml)) —
-  the same file this README calls the deployed source of truth for the route
-  table — renders **six** routes, not the four in `application-pki.yml` /
-  the Liquibase seed: it puts `signup-gate-signup` (`/api/signup`) and
-  `signup-gate-login` (`/api/login`) ahead of the `casdoor-*` routes, proxying
-  through the pre-signup confusable/uniqueness gate (see the note under
-  ["What it routes"](#what-it-routes)). Neither this repo's YAML nor its
-  Liquibase seed models `signup-gate`, so they are not just missing a literal
-  value here — they are missing two whole routes, and a gateway stood up from
-  only this repo's local-dev mirror would let signup/login traffic bypass the
-  confusable-name gate. Fixing this needs a `SIGNUP_GATE_URI` env-overridable
-  default plus two more route entries/seed rows, mirroring the generator
-  Application's ordering (signup-gate routes **before** `casdoor-auth`).
+- **The `signup-gate` routes exist, but no authorization layer names
+  `/api/signup` — NOT fixable in this repo.** Routing is now complete (six
+  routes, matching the generator Application), but *reachability* is decided
+  by two layers this overlay does not own, and neither mentions `/api/signup`:
+  the shared image's `SecurityConfig.PUBLIC_PATHS` permits `/api/auth/**`,
+  `/api/registration/**` and `/api/login/**` but **not** `/api/signup`, so the
+  coarse `anyExchange().authenticated()` floor applies to it; and the
+  `gateway_route_access` rows for this tier — both the baked-in
+  `CanonicalSeed.pki()` fallback and the generator's Postgres seed
+  (`specs/cluster/manifests/route-access/initdb/20-schema.sql`) — carry only
+  `/api/auth/**`, `/login/**`, `/.well-known/**` and the `/**` →
+  `ROLE_SUPERADMIN` headscale floor, so `/api/signup` matches only that
+  catch-all. (The route-access filter forwards *anonymous* requests untouched —
+  `SecurityConfig` is the only anonymous gate — so for an unauthenticated
+  caller the first layer is the deciding one.) Whether that is a defect depends
+  on who actually drives `/api/signup` through this gateway: under the current
+  model the browser talks to login-ui/user-bff and the Casdoor legs run
+  server-side, so the caller may never be anonymous. **Deferred deliberately:**
+  resolving it means naming the caller and then editing
+  [hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway)'s
+  `SecurityConfig` and/or the generator's route-access seed — both outside this
+  repo, and both fail-closed today rather than fail-open, so nothing is
+  silently permitted while it stays open.
 - **Liquibase seed rows still cannot see an env override — but they can no
   longer drift *silently*.** The `gateway_routes` insert statements in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
-  hardcode the Casdoor/headscale URIs as plain literals — Liquibase XML does
-  not support Spring's `${VAR:default}` relaxed-binding syntax used in
-  `application-pki.yml` — so a `CASDOOR_URI` or `HEADSCALE_URI` env override
-  applied at deploy time still does **not** propagate to these seeded fallback
-  rows. That half is unchanged, and templating the seed (envsubst before
+  hardcode the signup-gate/Casdoor/headscale URIs as plain literals — Liquibase
+  XML does not support Spring's `${VAR:default}` relaxed-binding syntax used in
+  `application-pki.yml` — so a `SIGNUP_GATE_URI`, `CASDOOR_URI` or
+  `HEADSCALE_URI` env override applied at deploy time still does **not**
+  propagate to these seeded fallback rows. That half is unchanged, and templating the seed (envsubst before
   Liquibase runs) remains the only route to a single source of truth. What is
   fixed is the silence: the two files' **defaults** are now compared by
   [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py) in
@@ -302,6 +322,12 @@ in the shared gateway repo.
 - **Authorization data path.** `gateway_route_access` (Postgres) is the source
   of truth, applied by the shared `GatewayRouteAccessFilter`; ADMIN /
   GAME-MASTER bypass within their own domain, SUPERADMIN cross-domain.
+- **Signup path.** `/api/signup` and `/api/login` route through the
+  `signup-gate` proxy (env-overridable `SIGNUP_GATE_URI`) ahead of the
+  `casdoor-*` routes, in both `application-pki.yml` and the `gateway_routes`
+  seed, so the local-dev mirror enforces the confusable/uniqueness gate the
+  deployed generator Application does. Authorization for those paths is not
+  configured here — see [Known Gaps](#known-gaps--todo).
 - **SCG-5 route namespace.** SCG 5.0 moved static route config to
   `spring.cloud.gateway.server.webflux.routes`; `application-pki.yml` has been
   migrated off the legacy `spring.cloud.gateway.routes` prefix (see the note
@@ -325,6 +351,15 @@ default-off flag** (marked ✅, with the flag named in the bullet).
   so the static config binds routes under Boot 4 / SCG 5 (matches the sibling
   be-/fe-/hugmesh-gateway configs). The deployed Postgres `gateway_routes`
   path already worked; this fixes the image's baked static config too.
+- ✅ **`signup-gate` routes modelled in the local-dev mirror.**
+  `application-pki.yml` and
+  [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
+  now carry `signup-gate-signup` (`/api/signup`) and `signup-gate-login`
+  (`/api/login`) on an env-overridable `SIGNUP_GATE_URI`, seeded **ahead of**
+  the `casdoor-*` routes in a `seed-pki-signup-gate-routes` changeSet, so a
+  stack stood up from only this repo's mirror routes through the
+  confusable-username gate instead of straight to Casdoor. The drift check
+  compares order as well as values, so the ordering cannot silently regress.
 - ✅ **`docker build .` profile activation.** The `Dockerfile` now sets
   `SPRING_PROFILES_ACTIVE=pki` in addition to `SPRING_CONFIG_ADDITIONAL_LOCATION`,
   so `application-pki.yml` (a profile-specific `application-{profile}.yml`
