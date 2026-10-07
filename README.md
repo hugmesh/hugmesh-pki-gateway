@@ -142,7 +142,23 @@ seed** for this tier (so it is never silently fail-open):
 | `/api/auth/**` | `ROLE_USER` |
 | `/login/**` | `PUBLIC` (anonymous-allowed) |
 | `/.well-known/**` | `PUBLIC` (anonymous-allowed) |
-| `/**` | `ROLE_SUPERADMIN` (the headscale control-plane floor — the `headscale` route is `Host`-matched with no `Path`, so longest-pattern matching leaves the three rows above intact and floors everything else) |
+
+The headscale control plane is **not** a row in this table. Every request on the
+`headscale` route's `Host` (derived from that route's own `Host` predicate, e.g.
+`scale.hugmesh.net`) needs `ROLE_SUPERADMIN` through the host gate in the shared
+gateway's `SecurityConfig` (decision 79, hugmesh-admin-bff-api#57, landed in
+hugmesh-gateway#40). That gate is evaluated before `PUBLIC_PATHS` and before the
+route-access filter's same-domain admin bypass, which is why a `/**` row could
+not do the job. The baked-in pki seed therefore ships no bare `/**` row, so on
+any other Host of this tier a path none of the three rows match (for example
+`/api/signup` from the `signup-gate` route) is `NO_RULE`: it is forwarded to any
+authenticated principal on the coarse `authenticated()` floor.
+
+The generator's cluster seed
+(`specs/cluster/manifests/route-access/initdb/20-schema.sql`) still carries a
+`/**` -> `ROLE_SUPERADMIN` row for this gateway until the generator half of
+decision 79 lands; the Postgres rows, once loaded, take precedence over the
+baked-in seed, so a deployed cluster can still show that row.
 
 Login and OIDC discovery are deliberately `PUBLIC` so an unauthenticated visitor
 can reach the login page and a client can fetch JWKS; the token surface floors
@@ -224,12 +240,14 @@ which stays the deployed source of truth.
   the shared image's `SecurityConfig.PUBLIC_PATHS` permits `/api/auth/**`,
   `/api/registration/**` and `/api/login/**` but **not** `/api/signup`, so the
   coarse `anyExchange().authenticated()` floor applies to it; and the
-  `gateway_route_access` rows for this tier — both the baked-in
-  `CanonicalSeed.pki()` fallback and the generator's Postgres seed
-  (`specs/cluster/manifests/route-access/initdb/20-schema.sql`) — carry only
-  `/api/auth/**`, `/login/**`, `/.well-known/**` and the `/**` →
-  `ROLE_SUPERADMIN` headscale floor, so `/api/signup` matches only that
-  catch-all. (The route-access filter forwards *anonymous* requests untouched —
+  `gateway_route_access` rows for this tier — the baked-in
+  `CanonicalSeed.pki()` fallback carries only `/api/auth/**`, `/login/**` and
+  `/.well-known/**` (the headscale floor moved to the `SecurityConfig` host
+  gate, decision 79), so `/api/signup` is `NO_RULE` there and is forwarded to
+  any authenticated principal; the generator's Postgres seed
+  (`specs/cluster/manifests/route-access/initdb/20-schema.sql`) still adds a
+  `/**` → `ROLE_SUPERADMIN` row until the generator half of decision 79 lands,
+  so `/api/signup` matches only that catch-all there. (The route-access filter forwards *anonymous* requests untouched —
   `SecurityConfig` is the only anonymous gate — so for an unauthenticated
   caller the first layer is the deciding one.) Whether that is a defect depends
   on who actually drives `/api/signup` through this gateway: under the current
@@ -238,8 +256,8 @@ which stays the deployed source of truth.
   resolving it means naming the caller and then editing
   [hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway)'s
   `SecurityConfig` and/or the generator's route-access seed — both outside this
-  repo, and both fail-closed today rather than fail-open, so nothing is
-  silently permitted while it stays open.
+  repo. The baked-in fallback is no longer fail-closed for this path (an
+  authenticated principal is forwarded); the generator's Postgres seed still is.
 - **Liquibase seed rows still cannot see an env override — but they can no
   longer drift *silently*.** The `gateway_routes` insert statements in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
