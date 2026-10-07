@@ -10,9 +10,10 @@ on:
       gateway_image:
         description: >
           Sibling hugmesh-gateway base image (GATEWAY_IMAGE build-arg) this
-          overlay builds FROM.
+          overlay builds FROM. hugmesh-gateway's release workflow publishes
+          :latest and :<short sha> (there is no :main tag).
         required: false
-        default: ghcr.io/hugmesh/hugmesh-gateway:main
+        default: ghcr.io/hugmesh/hugmesh-gateway:latest
       tag:
         description: Tag to publish the built image under.
         required: false
@@ -23,7 +24,9 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    # RUNS_ON is an org/repo variable holding a JSON array of runner labels;
+    # fall back to the GitHub-hosted runner when it is unset.
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       packages: write
@@ -40,6 +43,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check the base image can be pulled
+        env:
+          GATEWAY_IMAGE: ${{ inputs.gateway_image }}
+        run: |
+          if [ -z "$GATEWAY_IMAGE" ]; then
+            echo "::error::gateway_image is empty; pass a hugmesh-gateway tag (latest or a short sha)"
+            exit 1
+          fi
+          if ! docker manifest inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+            echo "::error::cannot pull base image $GATEWAY_IMAGE (missing tag or package access). Run the hugmesh-gateway Release workflow first, and grant this repository Read under that package's Manage Actions access."
+            exit 1
+          fi
 
       - name: Build and push
         uses: docker/build-push-action@v6
