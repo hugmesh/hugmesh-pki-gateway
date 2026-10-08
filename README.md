@@ -180,14 +180,15 @@ paths (`/actuator/**`, …) to `GAME-MASTER` / `ADMIN` / `SUPERADMIN`.
 > the baked-in seed above. Admin-bff edits the rows at runtime (see
 > [Source of truth](#source-of-truth)). THIS repo only seeds the
 > `gateway_routes` *route-definition* table
-> ([`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)).
-> It ships no `gateway_route_access` seed of its own.
+> ([`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)),
+> and nothing in the shared image loads that table. It ships no
+> `gateway_route_access` seed of its own.
 
 ## How it relates to the gateways / Casdoor / federation / multi-tenancy
 
-- **Casdoor (auth) lives behind this gateway.** Every other tier's tokens come
-  through this door. The be/fe gateways and the BFFs validate JWTs *minted* by
-  the Casdoor this gateway fronts. The platform runs **one Casdoor per brand**,
+- **Casdoor (auth) lives behind this gateway.** Every other tier's tokens are
+  minted by the Casdoor this gateway fronts. The be/fe gateways and the BFFs
+  validate those JWTs. The platform runs **one Casdoor per brand**,
   so the cryptographically validated `iss` claim is the trustworthy tenant
   discriminator.
 - **Opaque-session bridge (inherited from the shared image).** The browser never
@@ -232,8 +233,10 @@ It renders the shared `hugmesh-gateway` Helm chart with `instance.name:
 hugmesh-pki-gateway` and the pki `routes`. The admin-bff
 (`hugmesh-admin-bff-api`) edits the `gateway_route_access` rows. This repo's
 `application-pki.yml` and `liquibase/changelog` mirror that same identity for
-standalone and local-dev use. The chart renders its routes into a ConfigMap, so
-the cluster reads neither file. Keep both in sync with the generator
+standalone and local-dev use. The chart renders its routes into a ConfigMap, and
+the pki Application does not override the chart's image
+(`registry.hugmesh.net/hugmesh/hugmesh-gateway`), so the cluster runs the shared
+image and reads neither file. Keep both in sync with the generator
 Application, which stays the deployed source of truth.
 
 ## Known Gaps / TODO
@@ -267,12 +270,13 @@ Application, which stays the deployed source of truth.
 - **Liquibase seed rows cannot see an env override, but they can no longer drift
   *silently*.** The `gateway_routes` inserts in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
-  hardcode the signup-gate, Casdoor and headscale URIs as plain literals.
+  hardcode the signup-gate, Casdoor and headscale URIs as plain literals. They
+  are a hand-kept mirror; nothing in the shared image applies or reads them.
   Liquibase XML does not support the `${VAR:default}` syntax that
   `application-pki.yml` uses. So a `SIGNUP_GATE_URI`, `CASDOOR_URI` or
   `HEADSCALE_URI` override applied at deploy time still does **not** reach these
-  seeded fallback rows. That half is unchanged. Templating the seed (envsubst
-  before Liquibase runs) is the only route to a single source of truth. What is
+  seed rows. That half is unchanged. Templating the seed (envsubst before
+  Liquibase runs) is the only route to a single source within this repo. What is
   fixed is the silence. [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py)
   compares the two files' **defaults** in the pipeline's `check` stage (see
   [CI](#ci)). Change one and forget the other, and the build fails. Keeping them
