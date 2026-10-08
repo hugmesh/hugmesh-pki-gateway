@@ -11,7 +11,8 @@ It is **the same image and code as
 Like its [be-](https://github.com/hugmesh/hugmesh-be-gateway) and
 [fe-gateway](https://github.com/hugmesh/hugmesh-fe-gateway)
 siblings this repo is a **thin overlay**: only the `SPRING_APPLICATION_NAME`, the
-Postgres-backed route set (Liquibase), and the downstream URIs differ. The image
+route set (`application-pki.yml`, mirrored by a Liquibase seed), and the
+downstream URIs differ. The image
 builds `FROM` the shared gateway image so every device runs identical, audited
 gateway code — the same security filter chain, RBAC, domain-scoping converter,
 and Cassandra-cached revocation / route-access / URL registry.
@@ -35,7 +36,9 @@ docker build -t hugmesh-systems/pki-gateway:dev .
 ## What it routes
 
 The route table is config-driven (`application-pki.yml`, mirrored into the
-`gateway_routes` Liquibase seed). All six routes are identity-tier downstreams
+`gateway_routes` Liquibase seed). The cluster reads neither file; it
+renders the same six routes from the generator Application (see
+[Source of truth](#source-of-truth)). All six routes are identity-tier downstreams
 in the `hugmesh-pki` namespace, and they match the deployed generator
 Application one-for-one **in order** — route order decides which predicate wins
 a request, so the two `signup-gate` routes come first:
@@ -120,12 +123,15 @@ override moves the pair together and cannot half-bypass the gate.
 > the legacy prefix is **silently ignored and binds zero routes**.
 > `application-pki.yml` has been **migrated** to
 > `spring.cloud.gateway.server.webflux.routes` (matching the sibling
-> be-/fe-/hugmesh-gateway configs), so the standalone/local-dev mirror binds
-> its casdoor + headscale routes under SCG-5. The deployed source of truth is the
-> Postgres-backed `gateway_routes` rows (seeded by
-> [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
-> and rendered by the generator Application), which is loaded by the shared
-> image's route loader and is **not** affected by the YAML-prefix move.
+> be-/fe-/hugmesh-gateway configs). The deployed routes depend on the same
+> prefix: the generator's `hugmesh-gateway` chart renders them into a ConfigMap
+> under `server.webflux.routes` and the pod loads it with
+> `SPRING_PROFILES_ACTIVE=routes`
+> (`specs/cluster/charts/hugmesh-gateway/templates/configmap.yaml`,
+> `templates/deployment.yaml`). The Liquibase `gateway_routes` seed
+> ([`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml))
+> is a local-dev mirror only: the shared image does not read that table (see the
+> `SecurityConfig` comment on `headscaleHostPatterns` in hugmesh-gateway).
 
 ## Role gates (inherited from the shared image)
 
@@ -135,14 +141,26 @@ external-access gate consults the admin-managed `gateway_route_access` rows for
 `hugmesh-pki-gateway` (the `gateway_route_access` table is the source of
 truth, applied by the shared `GatewayRouteAccessFilter`). When neither Postgres
 nor Cassandra is reachable the gate falls back to the **baked-in canonical
-seed** for this tier (so it is never silently fail-open):
+seed** for this tier (`CanonicalSeed.pki()`):
 
 | URL pattern | Role |
 |-------------|------|
 | `/api/auth/**` | `ROLE_USER` |
 | `/login/**` | `PUBLIC` (anonymous-allowed) |
 | `/.well-known/**` | `PUBLIC` (anonymous-allowed) |
-| `/**` | `ROLE_SUPERADMIN` (the headscale control-plane floor — the `headscale` route is `Host`-matched with no `Path`, so longest-pattern matching leaves the three rows above intact and floors everything else) |
+
+The headscale control plane is not a row in this table. The `headscale` route
+is matched by `Host` alone, so the shared image's `SecurityConfig` requires
+`ROLE_SUPERADMIN` for every request on that route's `Host` (read from the
+route's own `Host` predicate). That rule is the first `authorizeExchange`
+rule, ahead of `PUBLIC_PATHS` and ahead of the route-access filter's
+same-domain admin bypass. The baked-in seed ships no bare `/**` row. On any
+other Host of this tier, a path that none of the three rows match (for example
+`/api/signup`) has no rule and goes to any authenticated principal.
+The generator's cluster seed
+(`specs/cluster/manifests/route-access/initdb/20-schema.sql:174`) still carries
+a `/**` → `ROLE_SUPERADMIN` row for `hugmesh-pki-gateway`, so a deployed
+cluster can still show it.
 
 Login and OIDC discovery are deliberately `PUBLIC` so an unauthenticated visitor
 can reach the login page and a client can fetch JWKS; the token surface floors
@@ -173,15 +191,17 @@ to `ROLE_USER`. Infra/observability paths (`/actuator/**`, …) stay gated to
   brand**, so the cryptographically-validated `iss` claim is the trustworthy
   tenant discriminator.
 - **Opaque-session bridge (inherited from the shared image).** The browser
-  never holds a Casdoor JWT. login-ui drives a Casdoor OIDC authorization-code
-  (PKCE) redirect and user-bff performs the server-side code→token exchange,
-  holding per-session JWT custody/refresh; the browser only ever carries an
-  **opaque `bff_`-prefixed session**. A pre-security exchange filter in the
-  shared gateway code swaps `bff_` → the internal custody JWT before Spring
-  Security runs, so this gateway stays a **pure Casdoor-JWT OAuth2 resource
-  server** and its JWT validation + role gate run unchanged. This overlay
-  inherits that behavior from the base image; nothing about it is configured
-  here beyond `CASDOOR_ISSUER_URI`.
+  never holds a Casdoor JWT. login-ui posts the credentials to `/bff/login`;
+  user-bff drives the Casdoor login leg server-side (server-generated PKCE
+  pair), exchanges the code for a token, and holds per-session JWT
+  custody/refresh. The browser only ever carries an **opaque `bff_`-prefixed
+  session**. The shared gateway code has a pre-security exchange filter that
+  swaps `bff_` → the internal custody JWT before Spring Security runs. The
+  filter is **off by default** (`hugmesh.gateway.bff-exchange.enabled`); the
+  generator turns it on for the fe-gateway
+  (`specs/cluster/apps/20-gateway-fe.yaml:136`) and its pki Application sets no
+  such flag. Either way this gateway stays a **pure Casdoor-JWT OAuth2 resource
+  server**; nothing about it is configured here beyond `CASDOOR_ISSUER_URI`.
 - **Issuer-keyed domain scoping (foundation on the shared image).** The shared
   `CasdoorAuthorities` converter stamps every authenticated principal with
   exactly one issuer-derived `DOMAIN_<x>` authority (a non-role authority,
@@ -212,7 +232,8 @@ which renders the shared `hugmesh-gateway` Helm chart with `instance.name:
 hugmesh-pki-gateway` and the pki `routes`. The admin-bff
 (`hugmesh-admin-bff-api`) CRUDs the `gateway_route_access` rows. This repo's
 `application-pki.yml` and `liquibase/changelog` are the standalone/local-dev
-mirror of that same identity; keep them in sync with the generator Application,
+mirror of that same identity (the chart renders its routes into a ConfigMap, so
+the cluster reads neither file); keep them in sync with the generator Application,
 which stays the deployed source of truth.
 
 ## Known Gaps / TODO
@@ -224,12 +245,13 @@ which stays the deployed source of truth.
   the shared image's `SecurityConfig.PUBLIC_PATHS` permits `/api/auth/**`,
   `/api/registration/**` and `/api/login/**` but **not** `/api/signup`, so the
   coarse `anyExchange().authenticated()` floor applies to it; and the
-  `gateway_route_access` rows for this tier — both the baked-in
-  `CanonicalSeed.pki()` fallback and the generator's Postgres seed
-  (`specs/cluster/manifests/route-access/initdb/20-schema.sql`) — carry only
-  `/api/auth/**`, `/login/**`, `/.well-known/**` and the `/**` →
-  `ROLE_SUPERADMIN` headscale floor, so `/api/signup` matches only that
-  catch-all. (The route-access filter forwards *anonymous* requests untouched —
+  `gateway_route_access` rows for this tier. The baked-in `CanonicalSeed.pki()`
+  fallback carries only `/api/auth/**`, `/login/**` and `/.well-known/**`, so
+  `/api/signup` has no rule there and an authenticated caller is forwarded. The
+  generator's Postgres seed
+  (`specs/cluster/manifests/route-access/initdb/20-schema.sql`) adds a
+  `/**` → `ROLE_SUPERADMIN` row, so `/api/signup` matches only that catch-all
+  there. (The route-access filter forwards *anonymous* requests untouched —
   `SecurityConfig` is the only anonymous gate — so for an unauthenticated
   caller the first layer is the deciding one.) Whether that is a defect depends
   on who actually drives `/api/signup` through this gateway: under the current
@@ -238,8 +260,8 @@ which stays the deployed source of truth.
   resolving it means naming the caller and then editing
   [hugmesh-gateway](https://github.com/hugmesh/hugmesh-gateway)'s
   `SecurityConfig` and/or the generator's route-access seed — both outside this
-  repo, and both fail-closed today rather than fail-open, so nothing is
-  silently permitted while it stays open.
+  repo. An anonymous caller gets 401 from `SecurityConfig`; the baked-in
+  fallback does not stop an authenticated one.
 - **Liquibase seed rows still cannot see an env override — but they can no
   longer drift *silently*.** The `gateway_routes` insert statements in
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
@@ -258,8 +280,8 @@ which stays the deployed source of truth.
 
 ## CI
 
-The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml), on the privileged
-`hugmesh-x86` runner:
+There are two pipelines. [`.gitlab-ci.yml`](.gitlab-ci.yml) is the main one; it
+runs on the privileged `hugmesh-x86` runner:
 
 - **`check`** — `check:route-seed-drift` runs
   [`scripts/check-route-seed-drift.py`](scripts/check-route-seed-drift.py),
@@ -273,9 +295,13 @@ The only pipeline is [`.gitlab-ci.yml`](.gitlab-ci.yml), on the privileged
   (`GATEWAY_IMAGE` build-arg) and pushes this overlay to the in-cluster GitLab
   registry, only on the default branch or a tag. No keys are baked in.
 
-**CI is GitLab-only** — there are intentionally no GitHub Actions
-(`.github/workflows/`) in this repo, in line with the platform's CI = GitLab
-ONLY standard.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) is a
+**manual-only** (`workflow_dispatch`) GitHub Actions workflow. It builds the
+same image off `ghcr.io/hugmesh/hugmesh-gateway:latest` (or the
+`gateway_image` input) and pushes it to
+`ghcr.io/hugmesh/hugmesh-pki-gateway` as `:latest` (or the `tag` input) and
+`:<commit sha>`. It does not run the drift check; only the GitLab `check` stage
+does.
 
 ## Testing
 
@@ -301,22 +327,20 @@ in the shared gateway repo.
 
 - **Ecosystem baseline.** The fleet now runs **Spring Boot 4.0.7 / Spring Cloud
   2025.1.2** on **Java 25 LTS** (`eclipse-temurin:25`), with shared Maven
-  artifacts `hugmesh-parent` (metapom
-  2.7.0), `hugmesh-commons` (shared security/tenancy, `systems.hugmesh.commons.*`,
-  2.7.0) and the new `hugmesh-auth-core` (2.3.0, shared
-  account/session/MFA/Casdoor-admin infra; consumed by user-bff and admin-bff
-  only — **not** by this gateway). This overlay carries no Java of its own, so
-  it inherits the baseline entirely through the shared `hugmesh-gateway`
-  base image; there is no Boot-version pin in this repo.
-- **Auth model (live this cycle).** Casdoor is the SSO IdP. login-ui runs the
-  OIDC authorization-code (PKCE) redirect; **user-bff** performs the
-  server-side code→token exchange and holds per-session JWT custody/refresh; the
-  browser only ever holds an opaque `bff_` session. The gateway remains a pure
-  Casdoor-JWT resource server, with the shared image's pre-security exchange
-  filter swapping `bff_` → the internal custody JWT. Login/session/account
-  *logic* is being relocated from admin-bff to user-bff (shared core extracted
-  to `hugmesh-auth-core`); the account/session **data** stays in
-  admin-bff-db, reached by user-bff over mTLS + `X-Internal-Token`. None of this
+  artifacts `hugmesh-parent` (metapom 2.8.0), `hugmesh-commons` (shared
+  security/tenancy, `net.hugmesh.commons.*`, 2.1.0) and `hugmesh-auth-core`
+  (2.5.1, shared account/session/MFA/Casdoor-admin infra; consumed by user-bff
+  and admin-bff only — **not** by this gateway). This overlay carries no Java
+  of its own, so it inherits the baseline entirely through the shared
+  `hugmesh-gateway` base image; there is no Boot-version pin in this repo.
+- **Auth model.** Casdoor is the SSO IdP. login-ui posts the credentials to
+  `/bff/login`; **user-bff** drives the Casdoor login leg server-side (PKCE
+  generated server-side), does the code→token exchange and holds per-session
+  JWT custody/refresh; the browser only ever holds an opaque `bff_` session.
+  The gateway remains a pure Casdoor-JWT resource server. Login/session/account
+  *logic* has moved from admin-bff to user-bff (shared core in
+  `hugmesh-auth-core`); the account/session **data** stays in admin-bff-db,
+  reached by user-bff over mTLS + `X-Internal-Token`. None of this
   is configured in this repo — it is named here only so the docs match the
   current platform reality and do **not** imply login lives in admin-bff.
 - **Authorization data path.** `gateway_route_access` (Postgres) is the source
@@ -331,9 +355,10 @@ in the shared gateway repo.
 - **SCG-5 route namespace.** SCG 5.0 moved static route config to
   `spring.cloud.gateway.server.webflux.routes`; `application-pki.yml` has been
   migrated off the legacy `spring.cloud.gateway.routes` prefix (see the note
-  under [What it routes](#what-it-routes)). The deployed Postgres-backed
-  `gateway_routes` path is unaffected.
-- **Cloudflare** fronts prod (this gateway stays internal-only behind it).
+  under [What it routes](#what-it-routes)). The generator's chart already
+  renders the deployed routes under the new prefix.
+- **Cloudflare** fronts only the platform front door in prod (generator
+  `README.md`); this gateway is served by `nginx-internal` only.
 - Everything in the sections above is shipped on `main`.
 
 ## Roadmap
@@ -349,8 +374,8 @@ default-off flag** (marked ✅, with the flag named in the bullet).
 - ✅ **SCG-5 static-route prefix rename.** `application-pki.yml` migrated from
   `spring.cloud.gateway.routes` to `spring.cloud.gateway.server.webflux.routes`
   so the static config binds routes under Boot 4 / SCG 5 (matches the sibling
-  be-/fe-/hugmesh-gateway configs). The deployed Postgres `gateway_routes`
-  path already worked; this fixes the image's baked static config too.
+  be-/fe-/hugmesh-gateway configs). The generator's chart already rendered
+  its routes under the new prefix; this fixes the standalone config.
 - ✅ **`signup-gate` routes modelled in the local-dev mirror.**
   `application-pki.yml` and
   [`liquibase/changelog/001-gateway-routes.xml`](liquibase/changelog/001-gateway-routes.xml)
@@ -378,9 +403,9 @@ default-off flag** (marked ✅, with the flag named in the bullet).
   `001-gateway-route-access.xml`, `NOT NULL DEFAULT false`, so every existing row
   is `false`), and a deciding grant on a row with `mfa_required=true`
   additionally demands the `MFA_SATISFIED` marker — absent marker means
-  **denied**. The D8 privileged-MFA floor sits *above* the `SUPERADMIN`
-  cross-domain bypass, so even a `SUPERADMIN` reaching an `mfa_required` surface
-  without a fresh second factor is denied.
+  **denied**. With the separate privileged-floor flag on, the D8 floor sits
+  *above* the `SUPERADMIN` cross-domain bypass, so even a `SUPERADMIN` reaching
+  an `mfa_required` surface without a fresh second factor is denied.
 
   `MFA_SATISFIED` is **not** a role and **not** a permission: it is a non-role
   marker derived solely from the **BFF-written, freshness-validated
@@ -393,8 +418,9 @@ default-off flag** (marked ✅, with the flag named in the bullet).
   satisfy a role check.
 
   **MFA is still not enforced on identity-tier routes today**, because both
-  `app.mfa.enabled` and `app.mfa.enforce-privileged-floor` default `false` — when
-  off, the `mfa_required` column is inert. What remains is the platform-wide half:
+  `app.mfa.enabled` (`APP_MFA_ENABLED`) and `app.mfa.enforce-privileged-floor`
+  (`APP_MFA_ENFORCE_PRIVILEGED_FLOOR`) default `false` — when off, the
+  `mfa_required` column is inert. What remains is the platform-wide half:
   MFA enrollment / step-up (WebAuthn + TOTP + recovery, per-role defaults; the
   admin-bff `150`–`152` substrate/factors/WebAuthn changelogs are merged), the
   admin-bff-managed `mfa_required` rows for the identity-tier routes, and flipping
@@ -405,7 +431,8 @@ default-off flag** (marked ✅, with the flag named in the bullet).
   Decision (2026-07 hygiene pass): gateway-config overlays like this repo are
   **exempted**, for two verifiable reasons. (1) This repo contains no
   dependency manifest and no application code — only a `Dockerfile`,
-  `application-pki.yml`, and Liquibase changelogs — so a Dependency-Check SCA
+  `application-pki.yml`, Liquibase changelogs, one stdlib Python script and CI
+  config — so a Dependency-Check SCA
   job here would scan nothing and report a vacuous green. (2) Every byte of
   runtime behavior comes from the shared `hugmesh-gateway` image, whose own
   repo carries the full pen-test stage jobs (`pentest:sca` + `pentest:dast`
