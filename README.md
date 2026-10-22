@@ -300,12 +300,47 @@ runs on the privileged `hugmesh-x86` runner:
   (`GATEWAY_IMAGE` build-arg) and pushes this overlay to the in-cluster GitLab
   registry. It runs only on the default branch or a tag. No keys are baked in.
 
-[`.github/workflows/release.yml`](.github/workflows/release.yml) is a
-**manual-only** (`workflow_dispatch`) GitHub Actions workflow. It builds the
-same image off `ghcr.io/hugmesh/hugmesh-gateway:latest` (or the `gateway_image`
-input). It pushes the result to `ghcr.io/hugmesh/hugmesh-pki-gateway` as
-`:latest` (or the `tag` input) and as `:<commit sha>`. It does not run the drift
-check. Only the GitLab `check` stage does.
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the
+same image and publishes it to `ghcr.io/hugmesh/hugmesh-pki-gateway`. It first
+runs the same route-seed drift check as the GitLab `check` stage, then builds
+`FROM` the pinned base `ghcr.io/hugmesh/hugmesh-gateway:0.3.0-beta.1`
+(`PINNED_GATEWAY_IMAGE` in the workflow). What it publishes depends on the ref:
+
+| Run | Image tags | GitHub release |
+|---|---|---|
+| push to `main`, or a manual run on `main` | `:main`, `:sha-<12 hex>` | none |
+| push of the tag `v<VERSION>`, or a manual run on that tag | `:<VERSION>`, `:beta` (beta versions only), `:sha-<12 hex>` | pre-release, never marked latest |
+| any other ref | refused | none |
+
+- The tag must equal `v` plus the `VERSION` file. `VERSION` must be one SemVer
+  line with no `+build` part and no SNAPSHOT.
+- A published `:<VERSION>` is never overwritten. If the registry cannot say for
+  sure that the tag is absent, the run stops.
+- A beta never gets `:latest`. Only a final version (no `-`) would.
+- A release builds only on the pinned base. The `gateway_image` input overrides
+  the base for `main` builds only.
+- The workflow has no pull-request trigger. Its jobs use the runners in the
+  `RUNS_ON_PUBLISH` repo variable (a JSON array, for example
+  `["self-hosted","Linux","X64"]`) only for `main` and `v*` tags, and
+  GitHub-hosted `ubuntu-latest` otherwise or when the variable is unset.
+  Deleting the variable sends every job back to hosted runners.
+
+## Version and releases
+
+The image version lives in [`VERSION`](VERSION): **`0.1.0-beta.1`**. The repo
+is at 0.1 because it is an overlay with no code or tests of its own, and the
+beta number starts at 1 because nothing was ever published under any version.
+
+To cut a release, after the `hugmesh-gateway` version named in
+`PINNED_GATEWAY_IMAGE` has been published:
+
+1. Merge a PR that sets `VERSION` (and, if needed, `PINNED_GATEWAY_IMAGE`).
+2. Tag that commit on `main` and push the tag:
+   `git tag -a v0.1.0-beta.1 -m v0.1.0-beta.1 && git push origin v0.1.0-beta.1`.
+3. To re-run a release, start the workflow manually on the tag:
+   `gh workflow run release.yml --repo hugmesh/hugmesh-pki-gateway --ref v0.1.0-beta.1`.
+
+A fix during the beta raises the beta number (`0.1.0-beta.2`), never PATCH.
 
 ## Testing
 
