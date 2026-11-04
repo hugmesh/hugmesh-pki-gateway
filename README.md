@@ -304,26 +304,40 @@ runs on the privileged `hugmesh-x86` runner:
 same image and publishes it to `ghcr.io/hugmesh/hugmesh-pki-gateway`. It first
 runs the same route-seed drift check as the GitLab `check` stage, then builds
 `FROM` the pinned base `ghcr.io/hugmesh/hugmesh-gateway:0.3.0-beta.1`
-(`PINNED_GATEWAY_IMAGE` in the workflow). What it publishes depends on the ref:
+(`PINNED_GATEWAY_IMAGE` in the workflow). The release channel comes from the
+tag. [`scripts/release-channel.sh`](scripts/release-channel.sh) decides every
+row below, and [`scripts/test-release-channel.sh`](scripts/test-release-channel.sh)
+tests it. The version job runs that self-test first.
 
 | Run | Image tags | GitHub release |
 |---|---|---|
 | push to `main`, or a manual run on `main` | `:main`, `:sha-<12 hex>` | none |
-| push of the tag `v<VERSION>`, or a manual run on that tag | `:<VERSION>`, `:beta` (beta versions only), `:sha-<12 hex>` | pre-release, never marked latest |
-| any other ref | refused | none |
+| push to `release/X.Y`, or a manual run on it | `:sha-<12 hex>` only | none |
+| push of a beta tag `vX.Y.Z-beta.N` (commit on `main`) | `:X.Y.Z-beta.N`, `:beta`, `:sha-<12 hex>` | prerelease, never Latest |
+| push of a stable tag `vX.Y.Z` (commit on `release/X.Y`) | `:X.Y.Z`, `:X.Y`, `:latest`, `:sha-<12 hex>` | full release, marked Latest |
+| the same stable tag on an older line (a newer `vA.B.C` is published) | `:X.Y.Z`, `:X.Y`, `:sha-<12 hex>` | full release, not Latest |
+| a manual run on a `v*` tag | as the tag push; an existing image or release is left alone | as the tag push |
+| any other ref (including `release/<not X.Y>`) | refused | none |
 
-- The tag must equal `v` plus the `VERSION` file. `VERSION` must be one SemVer
-  line with no `+build` part and no SNAPSHOT.
-- A published `:<VERSION>` is never overwritten. If the registry cannot say for
-  sure that the tag is absent, the run stops.
-- A beta never gets `:latest`. Only a final version (no `-`) would.
+- The tag must equal `v` plus the `VERSION` file. `VERSION` must be one line,
+  `X.Y.Z` or `X.Y.Z-beta.N`. Other pre-releases (`-rc.N` and so on) are refused.
+- A beta tag is cut from `main` only. A stable tag is cut from its
+  `release/X.Y` branch only, and that branch must carry an `X.Y.*` version.
+- `:X.Y.Z` is never overwritten. If the registry cannot say for sure that the
+  tag is absent, the run stops. The floating tags `:beta`, `:X.Y` and
+  `:latest` move. A beta never gets `:X.Y` or `:latest`. A patch on an older
+  line moves its `:X.Y` but never `:latest`.
+- Whether `:X.Y` and `:latest` move is decided again right before the push and
+  right before `gh release create`, so a re-run never moves them backwards.
+  Every pushed tag must then resolve to the signed digest.
 - A release builds only on the pinned base. The `gateway_image` input overrides
-  the base for `main` builds only.
-- The workflow has no pull-request trigger. Its jobs use the runners in the
-  `RUNS_ON_PUBLISH` repo variable (a JSON array, for example
-  `["self-hosted","Linux","X64"]`) only for `main` and `v*` tags, and
-  GitHub-hosted `ubuntu-latest` otherwise or when the variable is unset.
-  Deleting the variable sends every job back to hosted runners.
+  the base for `main` and `release/X.Y` builds only.
+- The workflow has no pull-request trigger. The version and github-release jobs
+  use the runners in the `RUNS_ON_PUBLISH` repo variable (a JSON array, for
+  example `["self-hosted","Linux","X64"]`) only for `main` and `v*` tags. They
+  use GitHub-hosted `ubuntu-latest` otherwise (`release/X.Y` included) or when
+  the variable is unset. The signed image job always runs on GitHub-hosted
+  runners.
 
 ## Version and releases
 
@@ -331,16 +345,21 @@ The image version lives in [`VERSION`](VERSION): **`0.1.0-beta.1`**. The repo
 is at 0.1 because it is an overlay with no code or tests of its own, and the
 beta number starts at 1 because nothing was ever published under any version.
 
-To cut a release, after the `hugmesh-gateway` version named in
+To cut a beta, after the `hugmesh-gateway` version named in
 `PINNED_GATEWAY_IMAGE` has been published:
 
 1. Merge a PR that sets `VERSION` (and, if needed, `PINNED_GATEWAY_IMAGE`).
 2. Tag that commit on `main` and push the tag:
-   `git tag -a v0.1.0-beta.1 -m v0.1.0-beta.1 && git push origin v0.1.0-beta.1`.
+   `git tag -s v0.1.0-beta.1 -m v0.1.0-beta.1 && git push origin v0.1.0-beta.1`.
 3. To re-run a release, start the workflow manually on the tag:
    `gh workflow run release.yml --repo hugmesh/hugmesh-pki-gateway --ref v0.1.0-beta.1`.
 
 A fix during the beta raises the beta number (`0.1.0-beta.2`), never PATCH.
+
+A stable `X.Y.Z` is cut from a `release/X.Y` branch: set `VERSION` to `X.Y.Z`
+and `PINNED_GATEWAY_IMAGE` to a stable `hugmesh-gateway` version on that branch,
+then tag that commit `vX.Y.Z` (signed). A fix on a stable line is the next
+patch on the same branch.
 
 ## Testing
 
